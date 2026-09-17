@@ -2,16 +2,19 @@
 
   <PropertyGroup>
     <OutputType>Package</OutputType>
-    <!--
-      Points at the WPF app project so its build output (WPO.App.exe and
-      dependencies) can be referenced from Product.wxs via $(var.WPO.App.TargetDir).
-      Building this project requires the WiX v5 toolset (installed automatically
-      via this SDK reference the first time this project is restored/built).
-    -->
+    <InstallerPlatform>x64</InstallerPlatform>
+    <PublishOutputDirectory>$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)publish\</PublishOutputDirectory>
+    <DefineConstants>$(DefineConstants);PublishOutputDirectory=$(PublishOutputDirectory)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\WPO.App\WPO.App.csproj" />
   </ItemGroup>
+
+  <Target Name="PublishApplication" BeforeTargets="_CreateProjectDefineConstants">
+    <MSBuild Projects="..\..\src\WPO.App\WPO.App.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);PublishDir=$(PublishOutputDirectory);SelfContained=false;UseAppHost=true" />
+  </Target>
 
 </Project>

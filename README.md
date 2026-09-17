@@ -14,7 +14,7 @@ WindowsPerformanceOptimizer.sln
 ├─ tests/
 │  └─ WPO.Core.Tests/     xUnit 单元测试（net8.0），覆盖安全校验、清理执行、审计、性能扫描与启动项检查
 └─ installer/
-   └─ WPO.Installer/      WiX v5 安装器骨架（.wixproj + Product.wxs），仅打包 WPO.App 可执行文件
+   └─ WPO.Installer/      WiX v5 MSI：发布 WPO.App 并打包其全部运行时依赖
 ```
 
 ## 关键安全设计
@@ -118,10 +118,21 @@ dotnet build WindowsPerformanceOptimizer.sln
 dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
 
 # 单独构建 WiX 安装器（首次构建会自动还原 WiX v5 工具链）
-dotnet build installer\WPO.Installer\WPO.Installer.wixproj
+dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release
+
+# 不执行真实安装，静态检查 MSI 的文件、升级和安全表
+powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Validate-Msi.ps1
 ```
 
-`dotnet build` 会自动构建 `WPO.App`（WPF, net8.0-windows）；`WPO.Installer` 会引用其构建输出打包为 `WPO.Installer.msi`。
+`WPO.Installer` 在每次构建前以 framework-dependent 方式发布 `WPO.App`（包括托管依赖、运行时配置和应用宿主），然后将完整发布目录打包为 MSI。安装器为每机 x64 包，安装到 `C:\Program Files\WindowsPerformanceOptimizer`。MSI 支持 Windows Installer 的标准安装、修复和卸载流程，且通过 `MajorUpgrade` 替换旧版本；它没有自定义操作或注册表写入，不会触碰当前用户 `%LocalAppData%\WindowsPerformanceOptimizer` 下的审计日志或报告。
+
+当前未创建开始菜单快捷方式：WiX 的标准每用户开始菜单目录会让纯文件、每机组件触发 ICE43/ICE57。为遵守“不写注册表”的约束，安装器不会用 HKCU 注册表项作为该快捷方式组件的键路径，也不会抑制这些验证错误。
+
+Release MSI 产物位于 `installer\WPO.Installer\bin\Release\WPO.Installer.msi`；发布暂存目录位于 `installer\WPO.Installer\obj\Release\publish\`。目标计算机需要 .NET 8 Windows Desktop Runtime（安装器不捆绑第三方运行时或其他软件）。
+
+### 签名
+
+当前产物**未签名**。发布流程可在受控 CI/发布环境中、使用组织持有的代码签名证书对生成的 MSI 执行签名和时间戳；证书、私钥、指纹和签名命令不得写入本仓库。请在签名后重新运行上述静态检查；不要将未签名产物描述为已签名。
 
 ## 已知限制 / 后续工作
 
@@ -132,6 +143,6 @@ dotnet build installer\WPO.Installer\WPO.Installer.wixproj
   都会重新调用 `IPathSafetyValidator`，执行服务本身在删除前也会再次校验，任何一层发现路径不再安全都会拒绝删除该项。
 - `WindowsRecycleBinService` 依赖 `Microsoft.VisualBasic.FileIO.FileSystem`，仅在 Windows 上受支持（已加
   `[SupportedOSPlatform("windows")]` 标注）；单元测试全部通过 `IRecycleBinService` 的内存假实现验证，不会触发任何真实文件删除。
-- WiX 安装器骨架仅打包了单个可执行文件组件，未包含发布配置（自包含/单文件发布）、图标、卸载清理等生产级细节。
+- WiX MSI 以 framework-dependent 方式打包完整发布目录，依赖目标机上的 .NET 8 Windows Desktop Runtime；它不捆绑运行时、不添加注册表写入、不运行自定义操作，也不会卸载时清理用户 LocalAppData 数据。代码签名须由受控发布环境在产物生成后完成。
 - 启动项检查目前只覆盖 Run 注册表键与启动文件夹；服务、计划任务、WMI 事件订阅等其他自启动机制尚未实现，也不解析
   “启动”文件夹中 `.lnk` 快捷方式指向的真实目标路径（返回的是快捷方式文件自身路径）。

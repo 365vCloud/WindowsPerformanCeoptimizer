@@ -9,22 +9,19 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
-    <!--
-      Skeleton installer definition. This is intentionally minimal: it defines
-      the install directory and a single component that packages the WPF
-      app's main executable. It does not run any elevated, system-modifying,
-      or destructive custom actions - installation only copies files.
-    -->
-    <StandardDirectory Id="ProgramFilesFolder">
+    <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="WindowsPerformanceOptimizer" />
     </StandardDirectory>
 
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="MainExecutable">
         <File Id="WpoAppExe"
-              Source="$(var.WPO.App.TargetDir)WPO.App.exe"
+              Source="$(var.PublishOutputDirectory)WPO.App.exe"
               KeyPath="yes" />
       </Component>
+      <Files Include="$(var.PublishOutputDirectory)**">
+        <Exclude Files="$(var.PublishOutputDirectory)WPO.App.exe" />
+      </Files>
     </ComponentGroup>
 
     <Feature Id="MainFeature" Title="Windows Performance Optimizer" Level="1">
@@ -32,4 +29,3 @@
     </Feature>
   </Package>
 </Wix>
-
