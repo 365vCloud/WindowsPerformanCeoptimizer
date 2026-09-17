@@ -3,22 +3,19 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:WPO.App"
         mc:Ignorable="d"
-        Title="Windows 性能优化器" Height="560" Width="960" MinHeight="420" MinWidth="720">
+        Title="Windows 性能优化器" Height="720" Width="1080" MinHeight="540" MinWidth="800">
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0"
-                   Text="临时文件安全预览"
-                   FontSize="24" FontWeight="SemiBold" Margin="0,0,0,6" />
-
-        <TextBlock Grid.Row="1" Text="仅扫描当前用户 Temp 目录的过期文件；不会读取正文、删除文件或自动执行任何操作。"
+        <TextBlock Text="只读性能诊断" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,6" />
+        <TextBlock Grid.Row="1" Text="仅收集当前系统状态；不会结束进程、修改优先级、注册表或系统配置。"
                    Foreground="DimGray" Margin="0,0,0,16" />
 
         <Grid Grid.Row="2" Margin="0,0,0,16">
@@ -28,30 +25,83 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Button x:Name="PreviewButton" Content="开始扫描" Width="110" Height="32"
-                    Click="PreviewButton_Click" />
-            <Button x:Name="CancelButton" Grid.Column="1" Content="取消扫描" Width="110" Height="32"
-                    Margin="8,0,0,0" IsEnabled="False" Click="CancelButton_Click" />
-            <TextBlock x:Name="StatusTextBlock" Grid.Column="2" VerticalAlignment="Center"
+            <Button x:Name="RefreshDiagnosticsButton" Content="刷新诊断" Width="110" Height="32"
+                    Click="RefreshDiagnosticsButton_Click" />
+            <Button x:Name="CancelDiagnosticsButton" Grid.Column="1" Content="取消诊断" Width="110" Height="32"
+                    Margin="8,0,0,0" IsEnabled="False" Click="CancelDiagnosticsButton_Click" />
+            <TextBlock x:Name="DiagnosticsStatusTextBlock" Grid.Column="2" VerticalAlignment="Center"
                        Margin="16,0,0,0" Foreground="DimGray" Text="准备就绪" />
             <StackPanel Grid.Column="3" Margin="16,0,0,0">
-                <TextBlock Text="候选数" Foreground="DimGray" />
-                <TextBlock x:Name="CandidateCountTextBlock" Text="0" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="CPU" Foreground="DimGray" />
+                <TextBlock x:Name="CpuTextBlock" Text="暂时无法获取" FontSize="16" FontWeight="SemiBold" />
             </StackPanel>
             <StackPanel Grid.Column="4" Margin="24,0,0,0">
-                <TextBlock Text="总大小" Foreground="DimGray" />
-                <TextBlock x:Name="TotalSizeTextBlock" Text="0 B" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="内存" Foreground="DimGray" />
+                <TextBlock x:Name="MemoryTextBlock" Text="暂时无法获取" FontSize="16" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Grid.Column="5" Margin="24,0,0,0">
+                <TextBlock Text="系统盘剩余" Foreground="DimGray" />
+                <TextBlock x:Name="DiskTextBlock" Text="暂时无法获取" FontSize="16" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Grid.Column="6" Margin="24,0,0,0">
+                <TextBlock Text="进程数" Foreground="DimGray" />
+                <TextBlock x:Name="ProcessCountTextBlock" Text="0" FontSize="16" FontWeight="SemiBold" />
             </StackPanel>
         </Grid>
 
-        <DataGrid Grid.Row="3" x:Name="CandidatesDataGrid" IsReadOnly="True" AutoGenerateColumns="False"
-                  CanUserAddRows="False" HeadersVisibility="Column">
+        <DataGrid Grid.Row="3" x:Name="ProcessesDataGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                  CanUserAddRows="False" HeadersVisibility="Column" Margin="0,0,0,16">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="路径" Binding="{Binding FullPath}" Width="*" />
-                <DataGridTextColumn Header="大小" Binding="{Binding DisplaySize}" Width="130" />
-                <DataGridTextColumn Header="风险" Binding="{Binding Risk}" Width="100" />
+                <DataGridTextColumn Header="进程" Binding="{Binding Name}" Width="140" />
+                <DataGridTextColumn Header="PID" Binding="{Binding ProcessId}" Width="80" />
+                <DataGridTextColumn Header="内存" Binding="{Binding Memory}" Width="110" />
+                <DataGridTextColumn Header="CPU" Binding="{Binding Cpu}" Width="100" />
+                <DataGridTextColumn Header="可执行路径" Binding="{Binding ExecutablePath}" Width="*" />
+                <DataGridTextColumn Header="发布者" Binding="{Binding Publisher}" Width="160" />
+                <DataGridTextColumn Header="签名" Binding="{Binding Signature}" Width="100" />
             </DataGrid.Columns>
         </DataGrid>
+
+        <Expander Grid.Row="4" Header="当前用户 Temp 文件安全预览" IsExpanded="False">
+            <Grid Margin="0,8,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="180" />
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="PreviewButton" Content="开始扫描" Width="110" Height="32" Click="PreviewButton_Click" />
+                    <Button x:Name="CancelButton" Grid.Column="1" Content="取消扫描" Width="110" Height="32"
+                            Margin="8,0,0,0" IsEnabled="False" Click="CancelButton_Click" />
+                    <TextBlock x:Name="StatusTextBlock" Grid.Column="2" VerticalAlignment="Center"
+                               Margin="16,0,0,0" Foreground="DimGray" Text="准备就绪" />
+                    <StackPanel Grid.Column="3" Margin="16,0,0,0">
+                        <TextBlock Text="候选数" Foreground="DimGray" />
+                        <TextBlock x:Name="CandidateCountTextBlock" Text="0" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="4" Margin="24,0,0,0">
+                        <TextBlock Text="总大小" Foreground="DimGray" />
+                        <TextBlock x:Name="TotalSizeTextBlock" Text="0 B" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                </Grid>
+                <DataGrid Grid.Row="1" x:Name="CandidatesDataGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                          CanUserAddRows="False" HeadersVisibility="Column" Margin="0,8,0,0">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="路径" Binding="{Binding FullPath}" Width="*" />
+                        <DataGridTextColumn Header="大小" Binding="{Binding DisplaySize}" Width="130" />
+                        <DataGridTextColumn Header="风险" Binding="{Binding Risk}" Width="100" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Expander>
     </Grid>
 </Window>

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using WPO.Core.Audit;
 using WPO.Core.Cleanup;
+using WPO.Core.Diagnostics;
 using WPO.Core.RecycleBin;
 using WPO.Core.Security;
 
@@ -34,6 +35,9 @@ public static class ServiceCollectionExtensions
         if (OperatingSystem.IsWindows())
         {
             services.AddSingleton<IRecycleBinService, WindowsRecycleBinService>();
+            services.AddSingleton<ISystemMetricsService, WindowsSystemMetricsService>();
+            services.AddSingleton<IProcessDiagnosticsSource, WindowsProcessDiagnosticsSource>();
+            services.AddSingleton<IPerformanceScanService, PerformanceScanService>();
         }
 
         return services;

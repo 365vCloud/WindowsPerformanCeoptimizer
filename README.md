@@ -8,11 +8,11 @@
 ```
 WindowsPerformanceOptimizer.sln
 ├─ src/
-│  ├─ WPO.Domain/        领域模型与枚举（RiskLevel、CleanupCategory、CleanupItem 等），net8.0 类库
-│  ├─ WPO.Core/           核心服务：路径安全验证器、清理预览/执行服务、回收站抽象、审计日志与导出、DI 注册，net8.0 类库
-│  └─ WPO.App/            WPF 预览仪表盘（net8.0-windows），仅显示当前用户 Temp 的安全扫描结果
+│  ├─ WPO.Domain/        领域模型与枚举（含可用性明确的系统指标、进程诊断模型），net8.0 类库
+│  ├─ WPO.Core/           核心服务：只读性能诊断、路径安全验证器、清理预览/执行服务、审计与 DI，net8.0 类库
+│  └─ WPO.App/            WPF 仪表盘：只读系统/进程诊断与当前用户 Temp 安全预览
 ├─ tests/
-│  └─ WPO.Core.Tests/     xUnit 单元测试（net8.0），覆盖安全校验、清理执行与审计导出
+│  └─ WPO.Core.Tests/     xUnit 单元测试（net8.0），覆盖安全校验、清理执行、审计与性能扫描
 └─ installer/
    └─ WPO.Installer/      WiX v5 安装器骨架（.wixproj + Product.wxs），仅打包 WPO.App 可执行文件
 ```
@@ -42,11 +42,19 @@ WindowsPerformanceOptimizer.sln
   - 默认只包含最后修改时间超过 24 小时的文件，最大返回 1,000 项；每一项均调用 `IPathSafetyValidator`，并标记为
     `TemporaryFiles`、低风险及“当前用户 Temp 目录中的过期临时文件（仅预览）”。
   - 枚举器与候选项都会拒绝重解析点（符号链接、联结点等），不会沿此类路径递归；遇到单项访问、IO 或验证异常会跳过并继续。
+- **只读性能诊断**（`WPO.Core.Diagnostics`）：
+  - `ISystemMetricsService` 和 `IPerformanceScanService` 是可替换接口；Windows 实现仅使用标准 .NET 与 Windows
+    系统 API 获取物理内存、系统盘可用空间与进程元数据，不需要管理员权限。
+  - 进程扫描会短间隔异步采样单进程 CPU，单项异常隔离，并按内存占用降序返回最多 50 个进程。不会结束进程、修改优先级、
+    使用 PowerShell、改注册表或更改任何系统设置。
+  - 所有可能无法可靠取得的字段都使用 `MetricValue<T>` 表示；不可用时 `IsAvailable` 为 `false` 且 `Value` 为 `null`，
+    不会以零或其他猜测值伪造。可执行路径、发布者和签名状态也允许为空。
 
 ## 预览使用
 
-启动 `WPO.App` 后，点击“开始扫描”。仪表盘会异步显示候选数、总字节数和路径/大小/风险列表；扫描进行中可以点击“取消扫描”。
-该界面不提供删除按钮，不会读取候选文件内容，也不会执行删除、注册表、进程或系统配置操作。
+启动 `WPO.App` 后，点击“刷新诊断”可异步显示系统指标卡片和高内存进程表，扫描中可点击“取消诊断”。无法取得的数据将显示
+“暂时无法获取”。“当前用户 Temp 文件安全预览”折叠区保留原有的异步预览与取消扫描功能。该界面不提供删除按钮，不会读取候选文件内容，
+也不会执行删除、注册表、进程或系统配置操作。
 
 ## 构建与测试
 
