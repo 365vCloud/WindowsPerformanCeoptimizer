@@ -1,0 +1,17 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <!--
+      Points at the WPF app project so its build output (WPO.App.exe and
+      dependencies) can be referenced from Product.wxs via $(var.WPO.App.TargetDir).
+      Building this project requires the WiX v5 toolset (installed automatically
+      via this SDK reference the first time this project is restored/built).
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\WPO.App\WPO.App.csproj" />
+  </ItemGroup>
+
+</Project>

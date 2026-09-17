@@ -1,0 +1,20 @@
+## .NET
+bin/
+obj/
+*.user
+
+## VS / Rider
+.vs/
+.idea/
+
+## WiX
+*.wixobj
+*.wixpdb
+
+## Test / coverage
+TestResults/
+*.trx
+
+## OS
+Thumbs.db
+.DS_Store

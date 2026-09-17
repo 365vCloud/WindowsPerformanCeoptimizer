@@ -1,0 +1,27 @@
+<Window x:Class="WPO.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:WPO.App"
+        mc:Ignorable="d"
+        Title="Windows Performance Optimizer" Height="450" Width="800">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Text="Windows Performance Optimizer - 预览骨架（默认不会删除任何文件）"
+                   FontSize="16" FontWeight="Bold" Margin="0,0,0,12" />
+
+        <Button Grid.Row="1" x:Name="PreviewButton" Content="生成清理预览" Width="160"
+                HorizontalAlignment="Left" Click="PreviewButton_Click" Margin="0,0,0,12" />
+
+        <TextBox Grid.Row="2" x:Name="StatusTextBox" IsReadOnly="True"
+                 TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                 AcceptsReturn="True" />
+    </Grid>
+</Window>
