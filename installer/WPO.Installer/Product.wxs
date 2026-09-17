@@ -13,11 +13,28 @@
       <Directory Id="INSTALLFOLDER" Name="WindowsPerformanceOptimizer" />
     </StandardDirectory>
 
+    <StandardDirectory Id="ProgramMenuFolder" />
+
     <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
       <Component Id="MainExecutable">
         <File Id="WpoAppExe"
               Source="$(var.PublishOutputDirectory)WPO.App.exe"
-              KeyPath="yes" />
+              KeyPath="yes">
+          <!--
+            Non-advertised shortcut targeting the already-installed exe: this
+            does not require any Registry table entries (those are only
+            needed for advertised shortcuts), so it stays compatible with the
+            "no Registry/no CustomAction" MSI validation. Without a Start
+            Menu entry, users had no discoverable way to launch the app
+            after installing, which was reported as "install succeeds but
+            nothing seems to run".
+          -->
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="ProgramMenuFolder"
+                    Name="Windows Performance Optimizer"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Advertise="no" />
+        </File>
       </Component>
       <Files Include="$(var.PublishOutputDirectory)**">
         <Exclude Files="$(var.PublishOutputDirectory)WPO.App.exe" />

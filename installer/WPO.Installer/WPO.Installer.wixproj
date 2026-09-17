@@ -3,6 +3,15 @@
   <PropertyGroup>
     <OutputType>Package</OutputType>
     <InstallerPlatform>x64</InstallerPlatform>
+    <!--
+      ICE43/ICE57 flag that the Start Menu shortcut's component uses the exe
+      (a per-machine file) as its KeyPath instead of an HKCU registry value.
+      That guidance targets per-user installs; this package is perMachine-
+      only (Scope="perMachine"), so a file KeyPath is valid and suppressing
+      these two ICEs is the standard approach - no Registry table rows are
+      added by doing so.
+    -->
+    <SuppressIces>ICE43;ICE57</SuppressIces>
     <PublishOutputDirectory>$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)publish\</PublishOutputDirectory>
     <DefineConstants>$(DefineConstants);PublishOutputDirectory=$(PublishOutputDirectory)</DefineConstants>
   </PropertyGroup>
@@ -11,10 +20,17 @@
     <ProjectReference Include="..\..\src\WPO.App\WPO.App.csproj" />
   </ItemGroup>
 
+  <!--
+    Publish self-contained for win-x64 so the installed application does not
+    depend on a separately installed .NET Desktop Runtime. A framework-
+    dependent publish would fail to start on machines without that runtime
+    (the process exits almost immediately, which looks like the app
+    "flashing" and closing), so the MSI must ship the runtime with the app.
+  -->
   <Target Name="PublishApplication" BeforeTargets="_CreateProjectDefineConstants">
     <MSBuild Projects="..\..\src\WPO.App\WPO.App.csproj"
              Targets="Publish"
-             Properties="Configuration=$(Configuration);PublishDir=$(PublishOutputDirectory);SelfContained=false;UseAppHost=true" />
+             Properties="Configuration=$(Configuration);PublishDir=$(PublishOutputDirectory);RuntimeIdentifier=win-x64;SelfContained=true;UseAppHost=true" />
   </Target>
 
 </Project>
