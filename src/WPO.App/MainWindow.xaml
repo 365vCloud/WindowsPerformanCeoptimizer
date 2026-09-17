@@ -4,13 +4,14 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="Windows 性能优化器" Height="720" Width="1080" MinHeight="540" MinWidth="800">
+        Title="Windows 性能优化器" Height="860" Width="1080" MinHeight="620" MinWidth="800">
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
@@ -99,6 +100,43 @@
                         <DataGridTextColumn Header="路径" Binding="{Binding FullPath}" Width="*" />
                         <DataGridTextColumn Header="大小" Binding="{Binding DisplaySize}" Width="130" />
                         <DataGridTextColumn Header="风险" Binding="{Binding Risk}" Width="100" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Expander>
+
+        <Expander Grid.Row="5" Header="启动项检查（只读）" IsExpanded="False" Margin="0,12,0,0">
+            <Grid Margin="0,8,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="220" />
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="StartupCheckButton" Content="检查启动项" Width="110" Height="32"
+                            Click="StartupCheckButton_Click" />
+                    <Button x:Name="CancelStartupCheckButton" Grid.Column="1" Content="取消检查" Width="110" Height="32"
+                            Margin="8,0,0,0" IsEnabled="False" Click="CancelStartupCheckButton_Click" />
+                    <TextBlock x:Name="StartupStatusTextBlock" Grid.Column="2" VerticalAlignment="Center"
+                               Margin="16,0,0,0" Foreground="DimGray" Text="准备就绪" TextWrapping="Wrap" />
+                    <StackPanel Grid.Column="3" Margin="16,0,0,0">
+                        <TextBlock Text="启动项数" Foreground="DimGray" />
+                        <TextBlock x:Name="StartupItemCountTextBlock" Text="0" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                </Grid>
+                <DataGrid Grid.Row="1" x:Name="StartupItemsDataGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                          CanUserAddRows="False" HeadersVisibility="Column" Margin="0,8,0,0">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="160" />
+                        <DataGridTextColumn Header="可执行路径" Binding="{Binding ExecutablePath}" Width="*" />
+                        <DataGridTextColumn Header="来源" Binding="{Binding SourceDisplay}" Width="160" />
+                        <DataGridTextColumn Header="启用状态" Binding="{Binding EnabledDisplay}" Width="90" />
+                        <DataGridTextColumn Header="签名状态" Binding="{Binding SignatureDisplay}" Width="200" />
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>

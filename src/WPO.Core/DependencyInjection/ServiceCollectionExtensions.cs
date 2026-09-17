@@ -4,6 +4,7 @@ using WPO.Core.Cleanup;
 using WPO.Core.Diagnostics;
 using WPO.Core.RecycleBin;
 using WPO.Core.Security;
+using WPO.Core.Startup;
 
 namespace WPO.Core.DependencyInjection;
 
@@ -38,6 +39,8 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<ISystemMetricsService, WindowsSystemMetricsService>();
             services.AddSingleton<IProcessDiagnosticsSource, WindowsProcessDiagnosticsSource>();
             services.AddSingleton<IPerformanceScanService, PerformanceScanService>();
+            services.AddSingleton<IStartupEntryReader, WindowsStartupEntryReader>();
+            services.AddSingleton<IStartupItemService, WindowsStartupItemService>();
         }
 
         return services;

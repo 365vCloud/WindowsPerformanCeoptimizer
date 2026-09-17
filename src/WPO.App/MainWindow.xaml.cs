@@ -1,6 +1,7 @@
 using System.Windows;
 using WPO.Core.Cleanup;
 using WPO.Core.Diagnostics;
+using WPO.Core.Startup;
 using WPO.Domain.Enums;
 using WPO.Domain.Models;
 
@@ -15,6 +16,7 @@ public partial class MainWindow : Window
     private readonly IServiceProvider _services;
     private CancellationTokenSource? _scanCancellation;
     private CancellationTokenSource? _diagnosticsCancellation;
+    private CancellationTokenSource? _startupCheckCancellation;
 
     public MainWindow(IServiceProvider services)
     {
@@ -125,6 +127,55 @@ public partial class MainWindow : Window
         StatusTextBlock.Text = "正在取消扫描...";
     }
 
+    private async void StartupCheckButton_Click(object sender, RoutedEventArgs e)
+    {
+        StartupCheckButton.IsEnabled = false;
+        CancelStartupCheckButton.IsEnabled = true;
+        _startupCheckCancellation = new CancellationTokenSource();
+        StartupStatusTextBlock.Text = "正在检查启动项...";
+
+        try
+        {
+            var startupItemService = _services.GetService(typeof(IStartupItemService)) as IStartupItemService;
+            if (startupItemService is null)
+            {
+                StartupItemsDataGrid.ItemsSource = Array.Empty<StartupItemRow>();
+                StartupItemCountTextBlock.Text = "0";
+                StartupStatusTextBlock.Text = "启动项检查服务在当前平台不可用。";
+                return;
+            }
+
+            var items = await startupItemService.GetStartupItemsAsync(200, _startupCheckCancellation.Token);
+            StartupItemsDataGrid.ItemsSource = items.Select(item => new StartupItemRow(item));
+            StartupItemCountTextBlock.Text = items.Count.ToString("N0");
+            StartupStatusTextBlock.Text = "检查完成。仅供参考，未修改任何注册表项或启动项。";
+        }
+        catch (OperationCanceledException)
+        {
+            StartupStatusTextBlock.Text = "启动项检查已取消。";
+        }
+        catch (Exception ex)
+        {
+            StartupItemsDataGrid.ItemsSource = Array.Empty<StartupItemRow>();
+            StartupItemCountTextBlock.Text = "0";
+            StartupStatusTextBlock.Text = $"检查失败：{ex.Message}";
+        }
+        finally
+        {
+            _startupCheckCancellation.Dispose();
+            _startupCheckCancellation = null;
+            StartupCheckButton.IsEnabled = true;
+            CancelStartupCheckButton.IsEnabled = false;
+        }
+    }
+
+    private void CancelStartupCheckButton_Click(object sender, RoutedEventArgs e)
+    {
+        CancelStartupCheckButton.IsEnabled = false;
+        _startupCheckCancellation?.Cancel();
+        StartupStatusTextBlock.Text = "正在取消检查...";
+    }
+
     private static string FormatSize(long sizeBytes)
     {
         string[] units = ["B", "KB", "MB", "GB", "TB"];
@@ -184,6 +235,36 @@ public partial class MainWindow : Window
                 process.ExecutablePath ?? "暂时无法获取",
                 process.Publisher ?? "暂时无法获取",
                 process.IsSigned switch { true => "已签名", false => "未签名", null => "暂时无法获取" })
+        {
+        }
+    }
+
+    private sealed record StartupItemRow(
+        string Name,
+        string ExecutablePath,
+        string SourceDisplay,
+        string EnabledDisplay,
+        string SignatureDisplay)
+    {
+        public StartupItemRow(StartupItem item)
+            : this(
+                item.Name ?? "暂时无法获取",
+                item.ExecutablePath ?? "暂时无法获取",
+                item.Source switch
+                {
+                    StartupItemSource.CurrentUserRunRegistry => "当前用户注册表 (Run)",
+                    StartupItemSource.LocalMachineRunRegistry => "本机注册表 (Run)",
+                    StartupItemSource.CurrentUserStartupFolder => "当前用户启动文件夹",
+                    StartupItemSource.AllUsersStartupFolder => "所有用户启动文件夹",
+                    _ => "未知来源"
+                },
+                item.IsEnabled switch { true => "已启用", false => "已禁用", null => "暂时无法获取" },
+                item.IsSigned switch
+                {
+                    true => item.Publisher is null ? "已签名" : $"已签名（{item.Publisher}）",
+                    false => "未检测到签名",
+                    null => "暂时无法获取"
+                })
         {
         }
     }
