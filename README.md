@@ -1,148 +1,168 @@
-# Windows Performance Optimizer
+# Windows Performance Optimizer (v2 — Tauri)
 
-一个专注于**安全默认**的 Windows 磁盘/性能清理工具的第一版基础工程。本仓库当前提供的是可构建、可测试的核心骨架，
-不包含任何危险的系统级修改逻辑；所有删除操作默认走回收站，绝不会自动执行永久删除。
+一个专注于**安全默认**的 Windows 磁盘垃圾清理工具。v2 版本已从 WPF 迁移到 **Rust + Tauri v2**：
+前端是无构建依赖的静态 HTML/CSS/JS 仪表盘，后端是 Rust（Tauri commands）。所有删除操作默认且唯一走
+Windows 回收站，绝不会自动执行永久删除。
 
-## 解决方案结构
+## v2 架构
 
 ```
-WindowsPerformanceOptimizer.sln
-├─ src/
-│  ├─ WPO.Domain/        领域模型与枚举（含可用性明确的系统指标、进程诊断、启动项模型），net8.0 类库
-│  ├─ WPO.Core/           核心服务：只读性能诊断、只读启动项检查、路径安全验证器、清理预览/执行服务、审计与 DI，net8.0 类库
-│  └─ WPO.App/            WPF 仪表盘：只读系统/进程诊断、当前用户 Temp 安全预览＋清理审阅/二次确认 UI、只读启动项检查
-├─ tests/
-│  └─ WPO.Core.Tests/     xUnit 单元测试（net8.0），覆盖安全校验、清理执行、审计、性能扫描与启动项检查
-└─ installer/
-   └─ WPO.Installer/      WiX v5 MSI：发布 WPO.App 并打包其全部运行时依赖
+.
+├─ src-tauri/            Tauri v2 后端（Rust）
+│  ├─ Cargo.toml         crate 依赖（tauri、serde、chrono、uuid、regex、once_cell、trash）
+│  ├─ tauri.conf.json    应用/窗口/CSP/打包配置（版本 2.0.0）
+│  ├─ capabilities/      仅暴露自定义 command，不授予 shell/fs/process 插件权限
+│  ├─ icons/             应用图标（占位图，见下方“已知限制”）
+│  └─ src/
+│     ├─ main.rs / lib.rs   Tauri Builder、command 注册
+│     ├─ commands.rs        暴露给前端的 Tauri command（扫描/取消/复核/执行/审计/导出）
+│     └─ core/
+│        ├─ path_safety.rs  路径安全验证器（白名单/黑名单/遍历/驱动器根/重解析点解析）
+│        ├─ scanner.rs      当前用户 Temp 垃圾文件只读扫描器（年龄过滤、数量上限、取消、单项隔离）
+│        ├─ cleanup.rs      清理执行引擎（二次确认门控、风险确认门控、二次路径校验、取消）
+│        ├─ recycle_bin.rs  基于 `trash` crate 的回收站移动（Windows Shell），无永久删除入口
+│        ├─ audit.rs        本地审计日志（LocalAppData，JSON Lines，路径/密钥脱敏）
+│        ├─ export.rs       清理结果导出（UTF-8 CSV/JSON，含 CSV 公式注入防护）
+│        └─ models.rs       跨前后端的强类型数据模型
+├─ frontend/             静态前端（无打包/构建步骤，直接由 Tauri 加载）
+│  ├─ index.html          中文仪表盘：扫描、列表、确认弹窗、进度、结果、审计日志
+│  ├─ style.css
+│  └─ main.js             调用 Tauri command；关闭/Esc/Enter 均不触发删除
+├─ package.json           `@tauri-apps/cli` + `@tauri-apps/api`（仅用于跑 Tauri CLI，无前端打包器）
+├─ legacy/WPO.App/        **已废弃** 的 WPF 壳（不再打包进 MSI，见 `legacy/WPO.App/LEGACY.md`）
+├─ src/WPO.Core, src/WPO.Domain   原 .NET 安全逻辑与其单元测试，保留作参考/兼容旧测试，与 Tauri 应用无运行时依赖
+├─ tests/WPO.Core.Tests/  仍然通过的原 .NET 单元测试（55 项）
+└─ installer/WPO.Installer/   WiX v5 MSI 项目：打包 **Tauri 发布的 exe**（不再打包 WPO.App.exe）
 ```
 
-## 关键安全设计
+## 关键安全设计（Rust 后端）
 
-- **路径安全验证器**（`WPO.Core.Security.PathSafetyValidator`）：
-  - 白名单校验：候选路径必须位于配置的 `AllowedRoots` 之下（按路径分段比较，而非朴素字符串前缀），
-    可防止“相似前缀”绕过（如允许根 `C:\Temp\Cache` 不会误放行同级目录 `C:\Temp\CacheOld`）。
-  - 拒绝路径遍历（`..` 分段）。
-  - 内置系统关键目录黑名单（Windows、System32、Program Files、用户主目录根），即使被误配置进白名单也会优先拒绝。
-  - 拒绝对驱动器根目录（如 `C:\`）本身的操作。
-  - 默认解析并复核符号链接/联结点的最终目标，防止符号链接逃逸白名单。
-- **清理执行服务**（`WPO.Core.Cleanup.CleanupExecutionService`）：
-  - 默认且唯一的自动删除方式是移动到回收站（`IRecycleBinService.MoveToRecycleBinAsync`）。
-  - 永久删除（`DeletionMode.PermanentWithConfirmation`）必须同时满足显式请求该模式 **且** `ConfirmPermanentDeletion = true`，
-    否则在执行前直接抛出异常，绝不会自动永久删除任何文件。
-  - 中/高风险项（`RiskLevel.Medium` / `RiskLevel.High`）即使被选中，也必须携带对应的 `ConfirmMediumRisk` /
-    `ConfirmHighRisk` 二次确认标志才会被处理，否则会被标记为 `Skipped`。
-  - 支持取消：一旦检测到取消请求，立即停止后续删除，未处理项标记为 `Cancelled`。
-  - 实际释放空间统计（`CleanupExecutionResult.TotalBytesFreed`）只累加真正 `Deleted` 状态的项，不包含失败/跳过/取消的项。
-- **审计日志**（`WPO.Core.Audit`）：
-  - `IAuditLogService` 的默认实现将 UTF-8 JSON Lines 日志写入当前用户 `%LocalAppData%\WindowsPerformanceOptimizer\audit.jsonl`；
-    不写入文件内容、密码或令牌，路径仅保存脱敏后的最小标识（用户目录/用户名替换为 `<user>`）。
-  - 写入前会移除 CR/LF，避免日志换行注入或 JSON Lines 结构破坏；“清除日志”服务调用要求显式确认。
-  - `IAuditLogService`、`IExportService` 均可替换；WPF 仅通过这些接口读写日志和导出结果，不直接访问文件系统。
-- **清理结果报告与导出**（`CleanupExecutionResult` / `WPO.Core.Export`）：
-  - 报告从逐项最终状态派生扫描、选择、尝试、成功、跳过、失败、取消计数，分别提供预计字节（所有已选项）与实际释放字节
-    （仅 `Deleted` 项），并以强类型原因标识未成功项目。
-  - 执行结束后会打开独立结果窗口，显示最终状态和逐项原因；可导出 UTF-8（无 BOM）CSV/JSON、复制摘要、查看/确认清除
-    本地审计日志。导出失败会显示原因，不会关闭或损坏当前结果。
-- **当前用户临时文件预览**（`WPO.Core.Cleanup.SafeTemporaryFileScanner`）：
-  - 只在 `Path.GetTempPath()` 对应的当前用户 Temp 根内递归枚举文件元数据，不读取文件正文。
-  - 默认只包含最后修改时间超过 24 小时的文件，最大返回 1,000 项；每一项均调用 `IPathSafetyValidator`，并标记为
-    `TemporaryFiles`、低风险及“当前用户 Temp 目录中的过期临时文件（仅预览）”。
-  - 枚举器与候选项都会拒绝重解析点（符号链接、联结点等），不会沿此类路径递归；遇到单项访问、IO 或验证异常会跳过并继续。
-- **清理审阅/确认 UI**（`WPO.App`：`MainWindow` + `ConfirmCleanupWindow` + `CleanupExecutionWindow`）：
-  - 扫描结果以复选框表格展示：路径、大小、风险等级、验证状态（在展示前对每一项重新调用 `IPathSafetyValidator`，
-    不只依赖扫描/预览阶段的历史结果）。
-  - 高风险项目与验证失败的项目复选框始终禁用，无法被勾选；中风险项目默认不勾选，且即使被勾选，也必须先勾选窗口内
-    “我已确认包含中风险清理项”后，“准备清理”才允许继续。
-  - 提供“全选安全项目”（仅勾选当前有效的低风险项）与“清空选择”，并实时汇总已选数量与已选字节总数。
-  - 点击“准备清理”只会打开独立的模态确认窗口（`ConfirmCleanupWindow`），展示数量、预计释放空间、固定的处理方式
-    “移动到回收站（可还原，不会永久删除）”，以及风险说明；该窗口没有永久删除选项。取消、关闭窗口（含标题栏 ×）、
-    Esc 均只会把对话框结果置为“未确认”；Enter 键在该窗口内被显式吞掉，永远不会触发确认，确认按钮也不设为默认按钮、
-    默认不获得焦点（焦点默认停留在“取消”按钮上）。
-  - 只有用户显式点击“确认清理”，并在随后弹出的二次确认对话框中显式选择“是”（默认值为“否”）后，才会调用既有的
-    `ICleanupExecutionService.ExecuteAsync`；点击“准备清理”前后都会针对已选路径重新执行一次 `IPathSafetyValidator`
-    校验，任何在此期间失效的项都会被自动取消勾选并阻止继续。
-  - 执行阶段在独立的模态进度窗口（`CleanupExecutionWindow`）中异步运行，支持通过“取消”按钮或关闭窗口触发既有的
-    `CancellationToken` 取消；单个项目失败不会中断其余项目的处理。执行结束或被取消后会展示每项的最终结果
-    （已清理/已跳过/失败/已取消）与实际释放的字节数（`CleanupExecutionResult.TotalBytesFreed`，只统计真正删除成功的项）。
-  - 该 UI 从不新增任何永久删除入口、不绕过 `IPathSafetyValidator`，也不在 `ICleanupExecutionService` 之外自行调用
-    文件系统删除 API。
-- **只读性能诊断**（`WPO.Core.Diagnostics`）：
-  - `ISystemMetricsService` 和 `IPerformanceScanService` 是可替换接口；Windows 实现仅使用标准 .NET 与 Windows
-    系统 API 获取物理内存、系统盘可用空间与进程元数据，不需要管理员权限。
-  - 进程扫描会短间隔异步采样单进程 CPU，单项异常隔离，并按内存占用降序返回最多 50 个进程。不会结束进程、修改优先级、
-    使用 PowerShell、改注册表或更改任何系统设置。
-  - 所有可能无法可靠取得的字段都使用 `MetricValue<T>` 表示；不可用时 `IsAvailable` 为 `false` 且 `Value` 为 `null`，
-    不会以零或其他猜测值伪造。可执行路径、发布者和签名状态也允许为空。
-- **只读启动项检查**（`WPO.Core.Startup`）：
-  - `IStartupItemService`（Windows 实现 `WindowsStartupItemService`）只读枚举最常见的自启动来源：当前用户与本机的
-    `HKCU/HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run` 注册表键，以及当前用户与所有用户的“启动”Shell 文件夹。
-  - 绝不写注册表、不修改/删除快捷方式或文件、不结束进程、不调用 PowerShell 或任何外部进程；单个来源或单个条目读取失败
-    （权限不足、键/文件不存在、格式异常等）都会被跳过，不会中断整体检查，也不会抛出未处理异常。
-  - 结果按来源、名称排序并限制返回数量（`maximumItems`），支持 `CancellationToken` 取消。
-  - `StartupItem.Publisher`、`IsSigned`、`IsEnabled`、`ExecutablePath` 均为可空：无法可靠判定时返回 `null`，而不是猜测值；
-    发布者未知或签名缺失/无法验证**不会**被当作恶意软件的证据，`RiskLevel` 始终为 `Low`，仅在 `Notes` 中给出信息性说明。
-  - 启用状态基于 `Explorer\StartupApproved\Run` 的近似启发式判断（无法确定时返回 `null`）；启动文件夹条目因缺乏禁用位，
-    只要存在即视为“已启用”。签名状态使用 `X509Certificate.CreateFromSignedFile` 尝试验证 Authenticode 签名，异常时返回
-    `false`（未检测到签名）或 `null`（无法确定，如访问被拒绝），两者都不等同于“已知恶意”。
-  - 业务逻辑（排序/限制/取消/单项异常隔离）与实际的注册表/文件系统读取（`IStartupEntryReader` /
-    `WindowsStartupEntryReader`）分离，便于用假实现覆盖单元测试，无需触碰真实注册表或启动项。
+- **路径安全验证器**（`core::path_safety::PathSafetyValidator`）：拒绝空路径、`..` 路径遍历段、驱动器根路径
+  （如 `C:\`）、系统关键目录（Windows、System32、Program Files、用户主目录）；白名单按路径**分段**匹配，
+  防止“相似前缀”绕过（`C:\Temp\Cache` 不会误放行 `C:\Temp\CacheOld`）；默认解析符号链接/联结点的最终目标并
+  重新校验，防止符号链接逃逸。
+- **垃圾文件扫描器**（`core::scanner::scan_temp_files`）：只在当前用户 `%TEMP%` 内递归枚举文件**元数据**
+  （不读取文件内容）；默认只包含最后修改时间超过 24 小时的文件；默认最多返回 1000 项（硬上限 5000）；
+  从不遍历重解析点（符号链接/联结点），单项访问异常会被跳过而不中断整体扫描；支持通过 `cancel_scan`
+  command 随时取消。
+- **清理执行引擎**（`core::cleanup::execute_cleanup`）：
+  - 必须显式携带 `confirmed: true`（对应前端“最终确认”弹窗的“是”）才会执行任何操作，否则直接返回错误、
+    不触碰任何文件。
+  - 中/高风险项即使在选中列表中，也必须携带对应的确认标志才会被处理，否则标记为“已跳过”。
+  - 每一项在真正删除前都会**重新调用** `PathSafetyValidator`，不依赖扫描时的历史校验结果。
+  - 支持取消：一旦检测到取消请求，后续未处理项立即标记为“已取消”，已处理项保留真实结果。
+  - 唯一的删除方式是移动到回收站（`core::recycle_bin::move_to_recycle_bin`，基于 `trash` crate 调用
+    Windows Shell）；**代码中不存在任何永久删除路径**。
+  - 释放空间统计只累加真正达到“已删除”状态的项。
+- **审计日志**（`core::audit`）：UTF-8 JSON Lines 写入当前用户
+  `%LocalAppData%\WindowsPerformanceOptimizer\audit.jsonl`；写入前剥离 CR/LF（防日志注入）、脱敏形如
+  `password=`/`token=`/`secret=`/`api-key=` 的疑似密钥、脱敏 Windows 风格路径、并将当前用户名/用户目录替换
+  为 `<user>`。清除日志需要显式 `confirmed: true`。
+- **导出**（`core::export::export_report`）：UTF-8（无 BOM）CSV/JSON 写入
+  `%LocalAppData%\WindowsPerformanceOptimizer\reports\`；CSV 导出包含公式注入防护（`=`/`+`/`-`/`@` 开头的
+  单元格会被加前缀 `'`）。
 
-## 预览使用
+## 前端交互与“不自动清理”约束
 
-启动 `WPO.App` 后，点击“刷新诊断”可异步显示系统指标卡片和高内存进程表，扫描中可点击“取消诊断”。无法取得的数据将显示
-“暂时无法获取”。
+- 高风险项目的复选框始终禁用；中风险项目默认不勾选，且必须在确认弹窗中额外勾选“我已确认包含中风险清理项”
+  才能继续。
+- 点击“准备清理”前会对所有已选路径重新调用 `revalidate_paths` command；确认弹窗展示数量、预计释放空间、
+  固定处理方式“移动到回收站（可还原，不会永久删除）”，没有永久删除选项。
+- **关闭弹窗、点击遮罩、Esc、Enter 均只会取消/关闭对话框，绝不会触发清理**；确认按钮不是默认按钮，默认
+  焦点停留在“取消”/“否”按钮上（见 `frontend/main.js` 的按键与遮罩点击处理）。
+- 只有依次经过“准备清理”→ 确认弹窗“确认清理”→ 二次确认弹窗显式选择“是”，才会调用 `execute_cleanup`。
+- 执行阶段显示独立的进度弹窗，可随时点击“取消”调用 `cancel_execution`；结束后展示逐项最终状态、原因、
+  实际释放字节，并提供 CSV/JSON 导出与本地审计日志查看/清除入口。
 
-“当前用户 Temp 文件安全预览与清理确认”折叠区点击“开始扫描”后，会以表格形式列出候选项（复选框、路径、大小、风险、
-验证状态）。高风险与验证失败的项目无法勾选；中风险项目默认不勾选，勾选后仍需额外勾选“我已确认包含中风险清理项”才能继续。
-可用“全选安全项目”一键勾选当前有效的低风险项，或用“清空选择”清空勾选；下方会实时显示已选数量与已选字节数。点击“准备清理”
-只会打开一个独立的模态确认窗口，展示数量、预计释放空间、固定的“移动到回收站”处理方式与风险说明——取消、关闭、Esc、Enter
-都不会执行任何清理，只有显式点击“确认清理”并在随后的二次确认中选择“是”，才会打开进度窗口并调用 `ICleanupExecutionService`
-真正执行（默认仅移动到回收站，绝无永久删除入口）。执行过程中可随时点击“取消”请求 `CancellationToken` 取消，单项失败不会
-中断其余项目；结束后会打开独立结果报告窗口，显示扫描/选择/尝试/成功/跳过/失败/取消、预计与实际释放字节、最终状态及每项原因；可导出 UTF-8
-CSV/JSON、复制摘要，并查看或经明确确认后清除本地脱敏审计日志。导出失败不会影响当前报告。
+## 构建
 
-“启动项检查（只读）”折叠区提供“检查启动项”/“取消检查”按钮与结果表格
-（名称、可执行路径、来源、启用状态、签名状态），检查在后台异步执行、不会阻塞界面；若当前平台不支持或检查失败，会以
-中文提示（如“启动项检查服务在当前平台不可用。”或“检查失败：<原因>”）展示，且不提供任何禁用/删除启动项的入口。
+### 前置要求
 
-## 构建与测试
+- Rust stable（含 MSVC 工具链：`rustup`、Visual Studio Build Tools 的 “使用 C++ 的桌面开发” 工作负载，
+  提供 `link.exe`）
+- Node.js（仅用于运行 `@tauri-apps/cli`；前端本身无构建步骤）
+- .NET 8 SDK（仅用于构建 WiX MSI 安装器、以及可选的 legacy WPF/测试项目）
+- Windows（Tauri 打包、WiX、回收站集成均为 Windows 专用）
 
-前置要求：.NET 8 SDK（`dotnet --version` 应输出 `8.0.x`）。WPF 项目与 WiX 安装器需要 Windows。
+本仓库已提交 `src-tauri/Cargo.lock` 与 `package-lock.json`，可直接复现依赖版本。
+
+### 构建与测试命令
 
 ```powershell
-# 还原 + 构建整个解决方案
-dotnet build WindowsPerformanceOptimizer.sln
+# 安装 Node 依赖（仅 @tauri-apps/cli + @tauri-apps/api）
+npm install
 
-# 仅运行单元测试
-dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
+# Rust 单元测试（路径遍历/相似前缀/年龄过滤/重解析点/风险确认门控/取消 等）
+cd src-tauri
+cargo test
+cd ..
 
-# 单独构建 WiX 安装器（首次构建会自动还原 WiX v5 工具链）
+# 完整 Tauri 发布构建（生成 exe，以及 Tauri 自带的 MSI/NSIS 安装包，可选）
+npm run build
+# 等价于: npx tauri build
+# 产物：
+#   src-tauri\target\release\wpo-app.exe
+#   src-tauri\target\release\bundle\msi\Windows Performance Optimizer_2.0.0_x64_en-US.msi
+#   src-tauri\target\release\bundle\nsis\Windows Performance Optimizer_2.0.0_x64-setup.exe
+
+# 本仓库的 WiX v5 MSI（打包上面的 wpo-app.exe；必须先跑通 `npm run build`）
 dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release
 
-# 不执行真实安装，静态检查 MSI 的文件、升级和安全表
+# 不执行真实安装，静态检查 MSI 的文件/升级/安全表
 powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Validate-Msi.ps1
+
+# 可选：旧 .NET 核心逻辑的单元测试（迁移前的参考实现，仍然全部通过）
+dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
 ```
 
-`WPO.Installer` 在每次构建前以 framework-dependent 方式发布 `WPO.App`（包括托管依赖、运行时配置和应用宿主），然后将完整发布目录打包为 MSI。安装器为每机 x64 包，安装到 `C:\Program Files\WindowsPerformanceOptimizer`。MSI 支持 Windows Installer 的标准安装、修复和卸载流程，且通过 `MajorUpgrade` 替换旧版本；它没有自定义操作或注册表写入，不会触碰当前用户 `%LocalAppData%\WindowsPerformanceOptimizer` 下的审计日志或报告。
+### 本次实际构建结果（在本机验证过）
 
-当前未创建开始菜单快捷方式：WiX 的标准每用户开始菜单目录会让纯文件、每机组件触发 ICE43/ICE57。为遵守“不写注册表”的约束，安装器不会用 HKCU 注册表项作为该快捷方式组件的键路径，也不会抑制这些验证错误。
+- `cargo test`：Rust 单元测试 **20 项全部通过**（路径安全 6 项、扫描器 5 项、清理执行 6 项、审计脱敏 3 项）。
+- `npx tauri build` / `npm run build`：**构建成功**，生成 `wpo-app.exe`、Tauri 自带 MSI 与 NSIS 安装包。
+- `dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release`：**构建成功**，生成
+  `installer\WPO.Installer\bin\Release\WPO.Installer.msi`（Version 2.0.0.0，UpgradeCode 与 v1 保持一致）。
+- `Validate-Msi.ps1`：**静态验证通过**（无 CustomAction、无 Registry 表、包含 `WindowsPerformanceOptimizer.exe`、
+  含 MajorUpgrade 元数据、安装到 `WindowsPerformanceOptimizer` 目录）。
+- `dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj`：旧 .NET 核心测试 **55 项全部通过**（作为参考实现
+  保留，未随本次迁移改动其逻辑）。
+- `dotnet build legacy\WPO.App\WPO.App.csproj -c Release`：legacy WPF 项目本身仍可独立构建（仅证明未被破坏），
+  但**不再是本仓库的构建/发布流程的一部分**，也不打包进 v2 MSI。
 
-Release MSI 产物位于 `installer\WPO.Installer\bin\Release\WPO.Installer.msi`；发布暂存目录位于 `installer\WPO.Installer\obj\Release\publish\`。目标计算机需要 .NET 8 Windows Desktop Runtime（安装器不捆绑第三方运行时或其他软件）。
+首次构建 Rust 部分前，本机没有 Rust/Node/MSVC 工具链，已通过 `winget` 安装：
+`Rustlang.Rustup`（stable-x86_64-pc-windows-msvc）、`OpenJS.NodeJS.LTS`、
+`Microsoft.VisualStudio.2022.BuildTools`（C++ 桌面开发工作负载，提供 `link.exe`）。若在新机器上构建，
+需要先完成以上安装（或等效的 Visual Studio 安装）。
 
-### 签名
+## MSI 安装器（v2）
 
-当前产物**未签名**。发布流程可在受控 CI/发布环境中、使用组织持有的代码签名证书对生成的 MSI 执行签名和时间戳；证书、私钥、指纹和签名命令不得写入本仓库。请在签名后重新运行上述静态检查；不要将未签名产物描述为已签名。
+- `installer\WPO.Installer\Product.wxs` 的 `Package` 版本号为 `2.0.0.0`；`UpgradeCode` 与 v1 保持不变
+  （`6f2b6f1e-6f6b-4a1a-9c1b-8b1a2f2e9d10`），确保旧版本可以被 `MajorUpgrade` 正常升级/覆盖安装。
+- 安装到 `C:\Program Files\WindowsPerformanceOptimizer\WindowsPerformanceOptimizer.exe`（即 Tauri 构建产出的
+  `wpo-app.exe`，安装时改名为更具描述性的文件名）。
+- 保留开始菜单快捷方式（非广告快捷方式，指向已安装的 exe，不需要写注册表）。
+- 沿用 v1 的安全约束：无 `CustomAction`、无 `Registry` 表写入、标准 `MajorUpgrade`/安装/卸载/修复流程。
+- **不再**打包 `WPO.App.exe`（旧 WPF 主程序）；`WPO.Installer.wixproj` 不再引用/发布 `legacy\WPO.App`。
+- 目标机器需要已安装 WebView2 Runtime（Windows 10 2004+ / Windows 11 通常已预装；`tauri.conf.json` 中
+  `webviewInstallMode` 设为 `downloadBootstrapper`，Tauri 自带的 NSIS/MSI 安装器可自动引导安装，但本仓库
+  自带的 WiX MSI 不包含该引导逻辑，仅打包应用本体）。
 
 ## 已知限制 / 后续工作
 
-- 当前只接入当前用户 Temp 的只读预览扫描器；回收站、浏览器缓存、Windows 更新缓存、日志等类别仍未实现。
-- WPF 界面现提供“审阅并确认后清理”的完整流程（勾选 → 独立模态确认 → 二次确认 → 独立模态执行进度），但仍然刻意不提供
-  永久删除入口，也不会在任何按钮的默认行为（Cancel/关闭/Esc/Enter）下自动执行清理。
-- 虽然扫描器会拒绝重解析点并限制在 Temp 白名单内，但文件系统在扫描后仍可能变化；UI 在展示候选项时以及点击“准备清理”前
-  都会重新调用 `IPathSafetyValidator`，执行服务本身在删除前也会再次校验，任何一层发现路径不再安全都会拒绝删除该项。
-- `WindowsRecycleBinService` 依赖 `Microsoft.VisualBasic.FileIO.FileSystem`，仅在 Windows 上受支持（已加
-  `[SupportedOSPlatform("windows")]` 标注）；单元测试全部通过 `IRecycleBinService` 的内存假实现验证，不会触发任何真实文件删除。
-- WiX MSI 以 framework-dependent 方式打包完整发布目录，依赖目标机上的 .NET 8 Windows Desktop Runtime；它不捆绑运行时、不添加注册表写入、不运行自定义操作，也不会卸载时清理用户 LocalAppData 数据。代码签名须由受控发布环境在产物生成后完成。
-- 启动项检查目前只覆盖 Run 注册表键与启动文件夹；服务、计划任务、WMI 事件订阅等其他自启动机制尚未实现，也不解析
-  “启动”文件夹中 `.lnk` 快捷方式指向的真实目标路径（返回的是快捷方式文件自身路径）。
+- **签名未完成**：当前生成的 `wpo-app.exe`、Tauri MSI/NSIS、以及本仓库 WiX MSI 均**未签名**。发布流程应在
+  受控 CI/发布环境中使用组织持有的代码签名证书对最终产物签名并加时间戳；证书、私钥、指纹和签名命令不得
+  写入本仓库。签名后需重新运行 `Validate-Msi.ps1`。
+- **应用图标为占位图**：`src-tauri/icons/` 下的图标由脚本临时生成（纯色背景 + "W" 字样），并非最终视觉设计，
+  发布前应替换为正式图标资源。
+- **仅覆盖当前用户 Temp 一个类别**：回收站已用空间、浏览器缓存、Windows 更新缓存、系统日志等清理类别仍未
+  实现（与 v1 状态一致）。
+- **前端未做浏览器兼容性测试**：`frontend/` 仅设计为在 Tauri 内置 WebView2 中运行，不追求独立浏览器兼容性。
+- **本仓库的 WiX MSI 依赖手动预构建**：`WPO.Installer.wixproj` 只校验 `src-tauri/target/release/wpo-app.exe`
+  是否存在，不会自动调用 `cargo`/`npm`（避免把工具链耦合进 MSBuild）；必须先手动运行 `npm run build`。
+- **legacy WPF 代码保留但不维护**：`legacy/WPO.App` 与 `src/WPO.Core`、`src/WPO.Domain`、
+  `tests/WPO.Core.Tests` 仅作为原安全逻辑的参考实现与回归测试保留，未来变更应只发生在 `src-tauri/`；
+  两套实现之间没有共享代码或运行时依赖。
+
+## 明确排除的行为（按需求）
+
+本应用及其构建流程中**不包含**：注册表写入、进程终止、PowerShell 清理脚本、提权绕过、默认永久删除、
+遥测/使用数据上传。

@@ -34,16 +34,16 @@ function Get-MsiColumnValues {
 }
 
 $files = Get-MsiColumnValues -Table "File" -Column "File"
-if ($files.Count -lt 2) {
-    throw "The MSI File table must contain the application executable and its published dependencies."
+if ($files.Count -lt 1) {
+    throw "The MSI File table must contain the application executable."
 }
 
 $fileNames = foreach ($file in (Get-MsiColumnValues -Table "File" -Column "FileName")) {
     $file.Split("|")[-1]
 }
 
-if ($fileNames -notcontains "WPO.App.exe") {
-    throw "The MSI File table does not contain WPO.App.exe."
+if ($fileNames -notcontains "WindowsPerformanceOptimizer.exe") {
+    throw "The MSI File table does not contain WindowsPerformanceOptimizer.exe."
 }
 
 $upgradeRows = Get-MsiColumnValues -Table "Upgrade" -Column "UpgradeCode"
@@ -70,3 +70,5 @@ if ($directoryNames -notcontains "WindowsPerformanceOptimizer") {
 }
 
 Write-Host "MSI static validation passed: $MsiPath"
+
+

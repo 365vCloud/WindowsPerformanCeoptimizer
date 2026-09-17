@@ -1,0 +1,17 @@
+{
+  "name": "windows-performance-optimizer",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Windows Performance Optimizer v2 (Tauri) - static frontend, no build step required.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2"
+  }
+}

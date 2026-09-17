@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\WPO.Domain\WPO.Domain.csproj" />
-    <ProjectReference Include="..\WPO.Core\WPO.Core.csproj" />
+    <ProjectReference Include="..\..\src\WPO.Domain\WPO.Domain.csproj" />
+    <ProjectReference Include="..\..\src\WPO.Core\WPO.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,3 +27,4 @@
   </PropertyGroup>
 
 </Project>
+

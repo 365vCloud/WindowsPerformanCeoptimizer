@@ -12,25 +12,25 @@
       added by doing so.
     -->
     <SuppressIces>ICE43;ICE57</SuppressIces>
-    <PublishOutputDirectory>$(MSBuildProjectDirectory)\$(BaseIntermediateOutputPath)publish\</PublishOutputDirectory>
-    <DefineConstants>$(DefineConstants);PublishOutputDirectory=$(PublishOutputDirectory)</DefineConstants>
+    <RepoRoot>$(MSBuildProjectDirectory)\..\..\</RepoRoot>
+    <TauriReleaseDir>$(RepoRoot)src-tauri\target\release\</TauriReleaseDir>
+    <TauriExePath>$(TauriReleaseDir)wpo-app.exe</TauriExePath>
+    <DefineConstants>$(DefineConstants);TauriExePath=$(TauriExePath)</DefineConstants>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\WPO.App\WPO.App.csproj" />
-  </ItemGroup>
-
   <!--
-    Publish self-contained for win-x64 so the installed application does not
-    depend on a separately installed .NET Desktop Runtime. A framework-
-    dependent publish would fail to start on machines without that runtime
-    (the process exits almost immediately, which looks like the app
-    "flashing" and closing), so the MSI must ship the runtime with the app.
+    v2 packages the Tauri (Rust) build output instead of publishing the
+    legacy WPF app. This target only *verifies* the exe already exists; it
+    intentionally does not invoke cargo/npm itself, because doing so from
+    inside an MSBuild target makes failures hard to diagnose and couples the
+    installer build to toolchains (Rust/Node) that may not be present on
+    every machine that just wants to rebuild the MSI from an existing
+    Tauri release build. Run `npm run build` (which runs `tauri build`) in
+    the repository root before building this project; see README.md.
   -->
-  <Target Name="PublishApplication" BeforeTargets="_CreateProjectDefineConstants">
-    <MSBuild Projects="..\..\src\WPO.App\WPO.App.csproj"
-             Targets="Publish"
-             Properties="Configuration=$(Configuration);PublishDir=$(PublishOutputDirectory);RuntimeIdentifier=win-x64;SelfContained=true;UseAppHost=true" />
+  <Target Name="EnsureTauriBuildExists" BeforeTargets="_CreateProjectDefineConstants">
+    <Error Condition="!Exists('$(TauriExePath)')"
+           Text="Tauri release executable not found at '$(TauriExePath)'. Run 'npm install' then 'npm run build' (or 'npm run tauri build') from the repository root before building the MSI." />
   </Target>
 
 </Project>

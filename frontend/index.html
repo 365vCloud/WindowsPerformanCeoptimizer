@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Windows 性能优化器</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Windows 性能优化器</h1>
+    <p class="subtitle">安全默认 · 仅回收站 · 无自动永久删除</p>
+  </header>
+
+  <main>
+    <section class="panel" id="scan-panel">
+      <div class="panel-header">
+        <h2>垃圾文件扫描</h2>
+        <div class="actions">
+          <label class="option">
+            最短文件年龄（小时）
+            <input type="number" id="min-age-hours" value="24" min="0" />
+          </label>
+          <button id="btn-scan" class="primary">开始扫描</button>
+          <button id="btn-cancel-scan" class="secondary" disabled>取消扫描</button>
+        </div>
+      </div>
+      <p class="hint">
+        仅扫描当前用户 Temp 目录中超过所选时长未修改的文件（默认 24 小时），只读取文件元数据，不读取文件内容；
+        最多返回 1000 项候选，符号链接/联结点会被跳过且不会被遍历。
+      </p>
+      <p id="scan-status" class="status" aria-live="polite"></p>
+
+      <div class="table-toolbar">
+        <button id="btn-select-safe" class="secondary" disabled>全选安全项目</button>
+        <button id="btn-clear-selection" class="secondary" disabled>清空选择</button>
+        <span id="selection-summary" class="summary"></span>
+      </div>
+
+      <div class="table-wrap">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>路径</th>
+              <th>大小</th>
+              <th>风险</th>
+              <th>最后修改时间</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+
+      <div class="prepare-bar">
+        <button id="btn-prepare-cleanup" class="primary" disabled>准备清理</button>
+      </div>
+    </section>
+
+    <section class="panel" id="audit-panel">
+      <div class="panel-header">
+        <h2>本地审计日志</h2>
+        <div class="actions">
+          <button id="btn-refresh-audit" class="secondary">刷新日志</button>
+          <button id="btn-clear-audit" class="danger-outline">清除日志（需二次确认）</button>
+        </div>
+      </div>
+      <div class="table-wrap small">
+        <table id="audit-table">
+          <thead>
+            <tr>
+              <th>时间（UTC）</th>
+              <th>类型</th>
+              <th>信息</th>
+              <th>路径</th>
+            </tr>
+          </thead>
+          <tbody id="audit-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Confirmation dialog: Cancel/close/Escape/Enter never trigger cleanup. -->
+  <div id="confirm-overlay" class="overlay hidden" role="presentation">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <h3 id="confirm-title">确认清理</h3>
+      <p>即将处理 <strong id="confirm-count">0</strong> 项，预计释放 <strong id="confirm-size">0</strong>。</p>
+      <p>处理方式：<strong>移动到回收站（可还原，不会永久删除）</strong>。</p>
+      <label class="medium-risk-ack hidden" id="medium-risk-ack-row">
+        <input type="checkbox" id="confirm-medium-risk" />
+        我已确认包含中风险清理项
+      </label>
+      <div class="dialog-actions">
+        <button id="btn-confirm-cancel" class="secondary" autofocus>取消</button>
+        <button id="btn-confirm-yes" class="danger">确认清理</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Second, explicit yes/no confirmation. Default answer is "No". -->
+  <div id="second-confirm-overlay" class="overlay hidden" role="presentation">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="second-confirm-title">
+      <h3 id="second-confirm-title">最终确认</h3>
+      <p>此操作会将所选文件移动到回收站。是否继续？</p>
+      <div class="dialog-actions">
+        <button id="btn-second-no" class="secondary" autofocus>否</button>
+        <button id="btn-second-yes" class="danger">是</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="progress-overlay" class="overlay hidden" role="presentation">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="progress-title">
+      <h3 id="progress-title">正在清理…</h3>
+      <p id="progress-status">处理中，请稍候。</p>
+      <div class="dialog-actions">
+        <button id="btn-progress-cancel" class="secondary">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="result-overlay" class="overlay hidden" role="presentation">
+    <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="result-title">
+      <h3 id="result-title">清理结果</h3>
+      <p id="result-summary"></p>
+      <div class="table-wrap small">
+        <table id="result-table">
+          <thead>
+            <tr><th>路径</th><th>状态</th><th>原因</th><th>大小</th></tr>
+          </thead>
+          <tbody id="result-body"></tbody>
+        </table>
+      </div>
+      <div class="dialog-actions">
+        <button id="btn-export-csv" class="secondary">导出 CSV</button>
+        <button id="btn-export-json" class="secondary">导出 JSON</button>
+        <button id="btn-result-close" class="primary" autofocus>关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
