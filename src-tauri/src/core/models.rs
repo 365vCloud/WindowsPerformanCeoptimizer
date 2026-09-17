@@ -106,3 +106,46 @@ pub struct AuditLogEntry {
     pub size_bytes: Option<u64>,
     pub correlation_id: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemMetrics {
+    pub cpu_percent: Option<f32>,
+    pub memory_percent: Option<f32>,
+    pub memory_used_bytes: Option<u64>,
+    pub memory_total_bytes: Option<u64>,
+    pub disks: Vec<DiskMetric>,
+    pub collected_at_utc: String,
+    pub unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskMetric {
+    pub name: String,
+    pub mount_point: String,
+    pub used_percent: Option<f32>,
+    pub free_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessDiagnostic {
+    pub pid: u32,
+    pub name: String,
+    pub cpu_percent: Option<f32>,
+    pub memory_bytes: Option<u64>,
+    pub memory_percent: Option<f32>,
+    pub unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupItem {
+    pub name: String,
+    pub command: Option<String>,
+    pub source: String,
+    pub enabled: Option<bool>,
+    pub unavailable_reason: Option<String>,
+}

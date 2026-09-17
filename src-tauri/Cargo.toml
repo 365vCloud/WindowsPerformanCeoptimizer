@@ -22,6 +22,8 @@ uuid = { version = "1", features = ["v4", "serde"] }
 regex = "1"
 once_cell = "1"
 trash = "5"
+sysinfo = "0.30"
+winreg = "0.52"
 
 [dev-dependencies]
 tempfile = "3"
@@ -30,4 +32,3 @@ filetime = "0.2"
 [[bin]]
 name = "wpo-app"
 path = "src/main.rs"
-

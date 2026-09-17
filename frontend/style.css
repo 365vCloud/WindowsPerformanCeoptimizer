@@ -94,6 +94,13 @@ th { position: sticky; top: 0; background: #f8f9fb; }
   z-index: 50;
 }
 .overlay.hidden { display: none; }
+.hidden { display: none !important; }
+.tabs { display: flex; gap: .5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.tab { border: 1px solid #cbd5e1; background: #f8fafc; padding: .6rem 1rem; border-radius: .4rem; cursor: pointer; }
+.tab.active { background: #2563eb; color: white; }
+.metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.metric-card { padding: 1.2rem; background: #f1f5f9; border-radius: .5rem; display: flex; flex-direction: column; gap: .5rem; }
+.metric-card span { font-size: 1.4rem; font-weight: 600; }
 
 .dialog {
   background: white; border-radius: 8px; padding: 20px 24px;
@@ -104,4 +111,3 @@ th { position: sticky; top: 0; background: #f8f9fb; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .medium-risk-ack { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: 10px 0; }
 .medium-risk-ack.hidden { display: none; }
-

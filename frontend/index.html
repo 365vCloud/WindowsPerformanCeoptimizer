@@ -13,6 +13,31 @@
   </header>
 
   <main>
+    <nav class="tabs" aria-label="功能导航">
+      <button class="tab active" data-panel="dashboard-panel">仪表盘</button>
+      <button class="tab" data-panel="diagnostics-panel">卡顿诊断</button>
+      <button class="tab" data-panel="scan-panel">垃圾文件</button>
+      <button class="tab" data-panel="startup-panel">启动项</button>
+      <button class="tab" data-panel="audit-panel">操作记录/结果</button>
+    </nav>
+    <section class="panel tab-panel" id="dashboard-panel">
+      <div class="panel-header"><h2>系统仪表盘</h2><button id="btn-refresh-metrics" class="primary">刷新指标</button></div>
+      <div class="metric-grid">
+        <div class="metric-card"><strong>CPU</strong><span id="metric-cpu">不可用</span></div>
+        <div class="metric-card"><strong>内存</strong><span id="metric-memory">不可用</span></div>
+        <div class="metric-card"><strong>磁盘</strong><span id="metric-disk">不可用</span></div>
+      </div>
+      <p id="metrics-status" class="status"></p>
+    </section>
+    <section class="panel tab-panel hidden" id="diagnostics-panel">
+      <div class="panel-header"><h2>高资源进程（只读诊断）</h2><button id="btn-scan-processes" class="primary">刷新进程</button></div>
+      <div class="table-wrap"><table><thead><tr><th>进程</th><th>PID</th><th>CPU</th><th>内存</th></tr></thead><tbody id="process-body"></tbody></table></div>
+    </section>
+    <section class="panel tab-panel hidden" id="startup-panel">
+      <div class="panel-header"><h2>启动项（只读检查）</h2><button id="btn-scan-startup" class="primary">刷新启动项</button></div>
+      <p class="hint">仅读取启动文件夹和 Run 注册表项，不提供启用/禁用或写入操作。</p>
+      <div class="table-wrap"><table><thead><tr><th>名称</th><th>命令</th><th>来源</th><th>状态</th></tr></thead><tbody id="startup-body"></tbody></table></div>
+    </section>
     <section class="panel" id="scan-panel">
       <div class="panel-header">
         <h2>垃圾文件扫描</h2>

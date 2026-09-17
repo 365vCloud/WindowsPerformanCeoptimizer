@@ -1,6 +1,6 @@
 # Windows Performance Optimizer (v2 — Tauri)
 
-一个专注于**安全默认**的 Windows 磁盘垃圾清理工具。v2 版本已从 WPF 迁移到 **Rust + Tauri v2**：
+一个包含系统仪表盘、卡顿诊断、启动项只读检查和垃圾文件清理的 Windows 性能工具。v2 版本已从 WPF 迁移到 **Rust + Tauri v2**：
 前端是无构建依赖的静态 HTML/CSS/JS 仪表盘，后端是 Rust（Tauri commands）。所有删除操作默认且唯一走
 Windows 回收站，绝不会自动执行永久删除。
 
@@ -15,7 +15,7 @@ Windows 回收站，绝不会自动执行永久删除。
 │  ├─ icons/             应用图标（占位图，见下方“已知限制”）
 │  └─ src/
 │     ├─ main.rs / lib.rs   Tauri Builder、command 注册
-│     ├─ commands.rs        暴露给前端的 Tauri command（扫描/取消/复核/执行/审计/导出）
+│     ├─ commands.rs        暴露给前端的 Tauri command（指标/进程/启动项/扫描/取消/复核/执行/审计/导出）
 │     └─ core/
 │        ├─ path_safety.rs  路径安全验证器（白名单/黑名单/遍历/驱动器根/重解析点解析）
 │        ├─ scanner.rs      当前用户 Temp 垃圾文件只读扫描器（年龄过滤、数量上限、取消、单项隔离）
@@ -23,9 +23,10 @@ Windows 回收站，绝不会自动执行永久删除。
 │        ├─ recycle_bin.rs  基于 `trash` crate 的回收站移动（Windows Shell），无永久删除入口
 │        ├─ audit.rs        本地审计日志（LocalAppData，JSON Lines，路径/密钥脱敏）
 │        ├─ export.rs       清理结果导出（UTF-8 CSV/JSON，含 CSV 公式注入防护）
+│        ├─ diagnostics.rs  CPU/内存/磁盘、进程和启动项只读采集（字段不可用时为 null）
 │        └─ models.rs       跨前后端的强类型数据模型
 ├─ frontend/             静态前端（无打包/构建步骤，直接由 Tauri 加载）
-│  ├─ index.html          中文仪表盘：扫描、列表、确认弹窗、进度、结果、审计日志
+│  ├─ index.html          中文标签页：仪表盘、卡顿诊断、垃圾文件、启动项、操作记录/结果
 │  ├─ style.css
 │  └─ main.js             调用 Tauri command；关闭/Esc/Enter 均不触发删除
 ├─ package.json           `@tauri-apps/cli` + `@tauri-apps/api`（仅用于跑 Tauri CLI，无前端打包器）

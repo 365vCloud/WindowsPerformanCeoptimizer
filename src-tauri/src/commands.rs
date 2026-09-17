@@ -12,6 +12,7 @@ use crate::core::models::{
 };
 use crate::core::path_safety::{PathSafetyOptions, PathSafetyValidator};
 use crate::core::scanner::{scan_temp_files as run_scan, ScanOptions};
+use crate::core::models::{ProcessDiagnostic, StartupItem, SystemMetrics};
 
 const MAX_CANDIDATE_HARD_CAP: usize = 5_000;
 
@@ -52,9 +53,11 @@ pub fn scan_temp_files(
         if let Some(hours) = opts.minimum_age_hours {
             scan_options.minimum_file_age = Duration::from_secs(hours * 3600);
         }
+
         if let Some(count) = opts.maximum_candidate_count {
             scan_options.maximum_candidate_count = count.min(MAX_CANDIDATE_HARD_CAP);
         }
+
     }
 
     let validator = build_validator();
@@ -66,6 +69,22 @@ pub fn scan_temp_files(
 
     Ok(items)
 }
+
+#[tauri::command]
+pub fn get_system_metrics() -> SystemMetrics { crate::core::diagnostics::system_metrics() }
+
+#[tauri::command]
+pub fn scan_processes(limit: Option<usize>) -> Vec<ProcessDiagnostic> {
+    crate::core::diagnostics::processes(limit.unwrap_or(20))
+}
+
+#[tauri::command]
+pub fn scan_startup_items() -> Vec<StartupItem> { crate::core::diagnostics::startup_items() }
+
+#[tauri::command]
+pub fn scan_junk_files(
+    state: State<AppState>, options: Option<ScanOptionsInput>,
+) -> Result<Vec<CleanupItem>, String> { scan_temp_files(state, options) }
 
 #[tauri::command]
 pub fn cancel_scan(state: State<AppState>) {
@@ -116,4 +135,9 @@ pub fn clear_audit_log(confirmed: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn export_report(result: CleanupExecutionResult, format: String) -> Result<String, String> {
     crate::core::export::export_report(&result, &format)
+}
+
+#[tauri::command]
+pub fn export_result(result: CleanupExecutionResult, format: String) -> Result<String, String> {
+    export_report(result, format)
 }

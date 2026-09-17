@@ -9,6 +9,10 @@ pub fn run() {
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             commands::scan_temp_files,
+            commands::scan_junk_files,
+            commands::get_system_metrics,
+            commands::scan_processes,
+            commands::scan_startup_items,
             commands::cancel_scan,
             commands::cancel_execution,
             commands::revalidate_paths,
@@ -16,6 +20,7 @@ pub fn run() {
             commands::get_audit_log,
             commands::clear_audit_log,
             commands::export_report,
+            commands::export_result,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Windows Performance Optimizer");

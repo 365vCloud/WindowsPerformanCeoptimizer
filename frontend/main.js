@@ -11,6 +11,7 @@ const state = {
 const el = (id) => document.getElementById(id);
 
 function formatBytes(bytes) {
+  if (bytes == null || !Number.isFinite(Number(bytes))) return "不可用";
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
   let value = bytes / 1024;
@@ -100,6 +101,39 @@ async function scan() {
   } finally {
     el("btn-scan").disabled = false;
     el("btn-cancel-scan").disabled = true;
+  }
+
+  async function refreshMetrics() {
+    try {
+      const m = await invoke("get_system_metrics");
+      el("metric-cpu").textContent = m.cpuPercent == null ? "不可用" : `${m.cpuPercent.toFixed(1)}%`;
+      el("metric-memory").textContent = m.memoryPercent == null ? "不可用" : `${m.memoryPercent.toFixed(1)}% (${formatBytes(m.memoryUsedBytes)}/${formatBytes(m.memoryTotalBytes)})`;
+      const disk = (m.disks || []).find(d => d.usedPercent != null) || (m.disks || [])[0];
+      el("metric-disk").textContent = disk?.usedPercent == null ? "不可用" : `${disk.usedPercent.toFixed(1)}%`;
+      el("metrics-status").textContent = m.unavailableReason || `采集时间：${m.collectedAtUtc}`;
+    } catch (err) { el("metrics-status").textContent = `指标不可用：${err}`; }
+  }
+
+  async function scanProcesses() {
+    const body = el("process-body"); body.innerHTML = "";
+    try {
+      for (const p of await invoke("scan_processes", { limit: 20 })) {
+        const tr = document.createElement("tr");
+        tr.append(td(p.name)); tr.append(td(String(p.pid)));
+        tr.append(td(p.cpuPercent == null ? "不可用" : `${p.cpuPercent.toFixed(1)}%`));
+        tr.append(td(formatBytes(p.memoryBytes))); body.append(tr);
+      }
+    } catch (err) { body.append(td(`读取失败：${err}`)); }
+  }
+
+  async function scanStartup() {
+    const body = el("startup-body"); body.innerHTML = "";
+    try {
+      for (const p of await invoke("scan_startup_items")) {
+        const tr = document.createElement("tr"); tr.append(td(p.name)); tr.append(td(p.command || "不可用"));
+        tr.append(td(p.source)); tr.append(td(p.enabled == null ? p.unavailableReason || "不可用" : "已发现")); body.append(tr);
+      }
+    } catch (err) { body.append(td(`读取失败：${err}`)); }
   }
 }
 
@@ -277,6 +311,13 @@ async function clearAuditLog() {
 }
 
 function wireEvents() {
+  document.querySelectorAll(".tab").forEach(tab => tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("hidden", p.id !== tab.dataset.panel));
+  }));
+  el("btn-refresh-metrics").addEventListener("click", refreshMetrics);
+  el("btn-scan-processes").addEventListener("click", scanProcesses);
+  el("btn-scan-startup").addEventListener("click", scanStartup);
   el("btn-scan").addEventListener("click", scan);
   el("btn-cancel-scan").addEventListener("click", cancelScan);
   el("btn-select-safe").addEventListener("click", selectSafeItems);
@@ -332,3 +373,4 @@ function wireEvents() {
 
 wireEvents();
 refreshAuditLog();
+refreshMetrics();
