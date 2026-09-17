@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using WPO.Core.Cleanup;
+using WPO.Core.Audit;
+using WPO.Core.Export;
 using WPO.Domain.Enums;
 using WPO.Domain.Models;
 
@@ -21,6 +23,8 @@ public partial class CleanupExecutionWindow : Window
     private readonly ICleanupExecutionService _executionService;
     private readonly CleanupPreviewResult _preview;
     private readonly CleanupSelection _selection;
+    private readonly IExportService _exportService;
+    private readonly IAuditLogService _auditLogService;
     private CancellationTokenSource? _cts;
 
     public CleanupExecutionResult? Result { get; private set; }
@@ -28,12 +32,16 @@ public partial class CleanupExecutionWindow : Window
     public CleanupExecutionWindow(
         ICleanupExecutionService executionService,
         CleanupPreviewResult preview,
-        CleanupSelection selection)
+        CleanupSelection selection,
+        IExportService exportService,
+        IAuditLogService auditLogService)
     {
         InitializeComponent();
         _executionService = executionService;
         _preview = preview;
         _selection = selection;
+        _exportService = exportService;
+        _auditLogService = auditLogService;
 
         Loaded += CleanupExecutionWindow_Loaded;
         Closing += CleanupExecutionWindow_Closing;
@@ -48,6 +56,7 @@ public partial class CleanupExecutionWindow : Window
             var result = await _executionService.ExecuteAsync(_preview, _selection, _cts.Token);
             Result = result;
             ShowResults(result);
+            new CleanupResultWindow(result, _exportService, _auditLogService) { Owner = this }.ShowDialog();
         }
         catch (Exception ex)
         {

@@ -3,7 +3,9 @@ using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using WPO.Core.Cleanup;
+using WPO.Core.Audit;
 using WPO.Core.Diagnostics;
+using WPO.Core.Export;
 using WPO.Core.Security;
 using WPO.Core.Startup;
 using WPO.Domain.Enums;
@@ -301,7 +303,15 @@ public partial class MainWindow : Window
             ConfirmPermanentDeletion = false
         };
 
-        var executionWindow = new CleanupExecutionWindow(executionService, _lastPreview, selection)
+        var exportService = _services.GetService(typeof(IExportService)) as IExportService;
+        var auditLogService = _services.GetService(typeof(IAuditLogService)) as IAuditLogService;
+        if (exportService is null || auditLogService is null)
+        {
+            MessageBox.Show(this, "结果报告服务未注册。", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        var executionWindow = new CleanupExecutionWindow(executionService, _lastPreview, selection, exportService, auditLogService)
         {
             Owner = this
         };

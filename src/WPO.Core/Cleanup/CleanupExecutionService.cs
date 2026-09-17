@@ -72,33 +72,33 @@ public sealed class CleanupExecutionService : ICleanupExecutionService
         {
             if (!selection.SelectedItemIds.Contains(item.Id))
             {
-                results.Add(ToResult(item, CleanupItemStatus.Skipped, "Not selected."));
+                results.Add(ToResult(item, false, CleanupItemStatus.Skipped, CleanupExecutionReason.NotSelected, "Not selected."));
                 continue;
             }
 
             if (cancelledFromHereOn || cancellationToken.IsCancellationRequested)
             {
                 cancelledFromHereOn = true;
-                results.Add(ToResult(item, CleanupItemStatus.Cancelled, "Execution cancelled before this item was processed."));
+                results.Add(ToResult(item, true, CleanupItemStatus.Cancelled, CleanupExecutionReason.CancelledBeforeProcessing, "Execution cancelled before this item was processed."));
                 continue;
             }
 
             if (item.RiskLevel == RiskLevel.Medium && !selection.ConfirmMediumRisk)
             {
-                results.Add(ToResult(item, CleanupItemStatus.Skipped, "Medium risk item requires explicit confirmation."));
+                results.Add(ToResult(item, true, CleanupItemStatus.Skipped, CleanupExecutionReason.RequiresMediumRiskConfirmation, "Medium risk item requires explicit confirmation."));
                 continue;
             }
 
             if (item.RiskLevel == RiskLevel.High && !selection.ConfirmHighRisk)
             {
-                results.Add(ToResult(item, CleanupItemStatus.Skipped, "High risk item requires explicit confirmation."));
+                results.Add(ToResult(item, true, CleanupItemStatus.Skipped, CleanupExecutionReason.RequiresHighRiskConfirmation, "High risk item requires explicit confirmation."));
                 continue;
             }
 
             var validation = _pathSafetyValidator.Validate(item.FullPath);
             if (!validation.IsAllowed)
             {
-                var failure = ToResult(item, CleanupItemStatus.Failed, $"Path failed safety validation: {validation.RejectionReason}.");
+                var failure = ToResult(item, true, CleanupItemStatus.Failed, CleanupExecutionReason.PathSafetyValidationFailed, $"Path failed safety validation: {validation.RejectionReason}.");
                 results.Add(failure);
                 LogItemFailure(item, correlationId, failure.ErrorMessage!);
                 continue;
@@ -112,13 +112,13 @@ public sealed class CleanupExecutionService : ICleanupExecutionService
 
                 if (operationResult.Succeeded)
                 {
-                    var success = ToResult(item, CleanupItemStatus.Deleted, errorMessage: null);
+                    var success = ToResult(item, true, CleanupItemStatus.Deleted, CleanupExecutionReason.None, errorMessage: null);
                     results.Add(success);
                     LogItemDeleted(item, correlationId);
                 }
                 else
                 {
-                    var failure = ToResult(item, CleanupItemStatus.Failed, operationResult.ErrorMessage);
+                    var failure = ToResult(item, true, CleanupItemStatus.Failed, CleanupExecutionReason.RecycleBinOperationFailed, operationResult.ErrorMessage);
                     results.Add(failure);
                     LogItemFailure(item, correlationId, operationResult.ErrorMessage ?? "Unknown error.");
                 }
@@ -126,7 +126,7 @@ public sealed class CleanupExecutionService : ICleanupExecutionService
             catch (OperationCanceledException)
             {
                 cancelledFromHereOn = true;
-                results.Add(ToResult(item, CleanupItemStatus.Cancelled, "Execution cancelled while processing this item."));
+                results.Add(ToResult(item, true, CleanupItemStatus.Cancelled, CleanupExecutionReason.CancelledDuringProcessing, "Execution cancelled while processing this item."));
             }
         }
 
@@ -156,12 +156,14 @@ public sealed class CleanupExecutionService : ICleanupExecutionService
         return result;
     }
 
-    private static CleanupExecutionItemResult ToResult(CleanupItem item, CleanupItemStatus status, string? errorMessage) => new()
+    private static CleanupExecutionItemResult ToResult(CleanupItem item, bool wasSelected, CleanupItemStatus status, CleanupExecutionReason reason, string? errorMessage) => new()
     {
         ItemId = item.Id,
         FullPath = item.FullPath,
         Status = status,
         SizeBytes = item.SizeBytes,
+        WasSelected = wasSelected,
+        Reason = reason,
         ErrorMessage = errorMessage
     };
 

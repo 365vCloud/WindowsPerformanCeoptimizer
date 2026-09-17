@@ -203,6 +203,10 @@ public class CleanupExecutionServiceTests
         Assert.Equal(1000, result.TotalBytesFreed);
         Assert.Equal(CleanupItemStatus.Deleted, result.Items.Single(i => i.ItemId == succeeding.Id).Status);
         Assert.Equal(CleanupItemStatus.Failed, result.Items.Single(i => i.ItemId == failing.Id).Status);
+        Assert.Equal(6000, result.EstimatedBytes);
+        Assert.Equal(2, result.SelectedItemCount);
+        Assert.Equal(2, result.AttemptedItemCount);
+        Assert.Equal(CleanupExecutionStatus.CompletedWithFailures, result.FinalStatus);
     }
 
     [Fact]
@@ -220,6 +224,7 @@ public class CleanupExecutionServiceTests
         var result = await service.ExecuteAsync(preview, selection, CancellationToken.None);
 
         Assert.Equal(CleanupItemStatus.Failed, result.Items.Single().Status);
+        Assert.Equal(CleanupExecutionReason.PathSafetyValidationFailed, result.Items.Single().Reason);
         Assert.Empty(recycleBin.MovedToRecycleBin);
     }
 
@@ -330,4 +335,3 @@ public class CleanupExecutionServiceTests
                 : PathValidationResult.Allow(candidatePath);
     }
 }
-

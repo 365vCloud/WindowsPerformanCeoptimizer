@@ -35,8 +35,15 @@ WindowsPerformanceOptimizer.sln
   - 支持取消：一旦检测到取消请求，立即停止后续删除，未处理项标记为 `Cancelled`。
   - 实际释放空间统计（`CleanupExecutionResult.TotalBytesFreed`）只累加真正 `Deleted` 状态的项，不包含失败/跳过/取消的项。
 - **审计日志**（`WPO.Core.Audit`）：
-  - 所有路径类字段在写入审计条目前先经过 `IAuditLogMasker` 脱敏（替换用户主目录前缀与用户名分段为 `<user>`）。
-  - 支持导出为 CSV 与 JSON（`IAuditLogExporter`）。
+  - `IAuditLogService` 的默认实现将 UTF-8 JSON Lines 日志写入当前用户 `%LocalAppData%\WindowsPerformanceOptimizer\audit.jsonl`；
+    不写入文件内容、密码或令牌，路径仅保存脱敏后的最小标识（用户目录/用户名替换为 `<user>`）。
+  - 写入前会移除 CR/LF，避免日志换行注入或 JSON Lines 结构破坏；“清除日志”服务调用要求显式确认。
+  - `IAuditLogService`、`IExportService` 均可替换；WPF 仅通过这些接口读写日志和导出结果，不直接访问文件系统。
+- **清理结果报告与导出**（`CleanupExecutionResult` / `WPO.Core.Export`）：
+  - 报告从逐项最终状态派生扫描、选择、尝试、成功、跳过、失败、取消计数，分别提供预计字节（所有已选项）与实际释放字节
+    （仅 `Deleted` 项），并以强类型原因标识未成功项目。
+  - 执行结束后会打开独立结果窗口，显示最终状态和逐项原因；可导出 UTF-8（无 BOM）CSV/JSON、复制摘要、查看/确认清除
+    本地审计日志。导出失败会显示原因，不会关闭或损坏当前结果。
 - **当前用户临时文件预览**（`WPO.Core.Cleanup.SafeTemporaryFileScanner`）：
   - 只在 `Path.GetTempPath()` 对应的当前用户 Temp 根内递归枚举文件元数据，不读取文件正文。
   - 默认只包含最后修改时间超过 24 小时的文件，最大返回 1,000 项；每一项均调用 `IPathSafetyValidator`，并标记为
@@ -92,7 +99,8 @@ WindowsPerformanceOptimizer.sln
 只会打开一个独立的模态确认窗口，展示数量、预计释放空间、固定的“移动到回收站”处理方式与风险说明——取消、关闭、Esc、Enter
 都不会执行任何清理，只有显式点击“确认清理”并在随后的二次确认中选择“是”，才会打开进度窗口并调用 `ICleanupExecutionService`
 真正执行（默认仅移动到回收站，绝无永久删除入口）。执行过程中可随时点击“取消”请求 `CancellationToken` 取消，单项失败不会
-中断其余项目；结束后进度窗口会显示每一项的结果（已清理/已跳过/失败/已取消）与实际释放的字节数。
+中断其余项目；结束后会打开独立结果报告窗口，显示扫描/选择/尝试/成功/跳过/失败/取消、预计与实际释放字节、最终状态及每项原因；可导出 UTF-8
+CSV/JSON、复制摘要，并查看或经明确确认后清除本地脱敏审计日志。导出失败不会影响当前报告。
 
 “启动项检查（只读）”折叠区提供“检查启动项”/“取消检查”按钮与结果表格
 （名称、可执行路径、来源、启用状态、签名状态），检查在后台异步执行、不会阻塞界面；若当前平台不支持或检查失败，会以

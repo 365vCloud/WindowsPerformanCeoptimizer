@@ -22,11 +22,7 @@ public sealed class AuditLogger : IAuditLogger
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        var maskedEntry = entry.MaskedPath is null
-            ? entry
-            : entry with { MaskedPath = _masker.Mask(entry.MaskedPath) };
-
-        _entries.Enqueue(maskedEntry);
+        _entries.Enqueue(AuditLogSanitizer.Sanitize(entry, _masker));
     }
 
     public IReadOnlyList<AuditLogEntry> GetEntries() => _entries.ToArray();
