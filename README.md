@@ -10,7 +10,7 @@ WindowsPerformanceOptimizer.sln
 ├─ src/
 │  ├─ WPO.Domain/        领域模型与枚举（RiskLevel、CleanupCategory、CleanupItem 等），net8.0 类库
 │  ├─ WPO.Core/           核心服务：路径安全验证器、清理预览/执行服务、回收站抽象、审计日志与导出、DI 注册，net8.0 类库
-│  └─ WPO.App/            WPF 最小可运行骨架（net8.0-windows），演示 DI 接入，未接入任何真实扫描器
+│  └─ WPO.App/            WPF 预览仪表盘（net8.0-windows），仅显示当前用户 Temp 的安全扫描结果
 ├─ tests/
 │  └─ WPO.Core.Tests/     xUnit 单元测试（net8.0），覆盖安全校验、清理执行与审计导出
 └─ installer/
@@ -37,6 +37,16 @@ WindowsPerformanceOptimizer.sln
 - **审计日志**（`WPO.Core.Audit`）：
   - 所有路径类字段在写入审计条目前先经过 `IAuditLogMasker` 脱敏（替换用户主目录前缀与用户名分段为 `<user>`）。
   - 支持导出为 CSV 与 JSON（`IAuditLogExporter`）。
+- **当前用户临时文件预览**（`WPO.Core.Cleanup.SafeTemporaryFileScanner`）：
+  - 只在 `Path.GetTempPath()` 对应的当前用户 Temp 根内递归枚举文件元数据，不读取文件正文。
+  - 默认只包含最后修改时间超过 24 小时的文件，最大返回 1,000 项；每一项均调用 `IPathSafetyValidator`，并标记为
+    `TemporaryFiles`、低风险及“当前用户 Temp 目录中的过期临时文件（仅预览）”。
+  - 枚举器与候选项都会拒绝重解析点（符号链接、联结点等），不会沿此类路径递归；遇到单项访问、IO 或验证异常会跳过并继续。
+
+## 预览使用
+
+启动 `WPO.App` 后，点击“开始扫描”。仪表盘会异步显示候选数、总字节数和路径/大小/风险列表；扫描进行中可以点击“取消扫描”。
+该界面不提供删除按钮，不会读取候选文件内容，也不会执行删除、注册表、进程或系统配置操作。
 
 ## 构建与测试
 
@@ -57,9 +67,10 @@ dotnet build installer\WPO.Installer\WPO.Installer.wixproj
 
 ## 已知限制 / 后续工作
 
-- `WPO.App` 目前只是一个最小 WPF 骨架：没有接入任何 `ICleanupScanner` 实现，因此“生成清理预览”按钮总是返回 0 个候选项，
-  也没有接入执行/取消/风险确认的完整交互界面。这是刻意的——本次任务的重点是核心领域模型与安全服务，具体的扫描器
-  （临时文件、回收站、浏览器缓存等）需要在后续迭代中按类别实现，并各自通过 `IPathSafetyValidator` 校验。
+- 当前只接入当前用户 Temp 的只读预览扫描器；回收站、浏览器缓存、Windows 更新缓存、日志等类别仍未实现。
+  WPF 界面刻意没有删除、执行或自动清理入口，扫描结果不代表任何文件会被处理。
+- 虽然扫描器会拒绝重解析点并限制在 Temp 白名单内，但文件系统在扫描后仍可能变化；任何未来的执行功能都必须重新进行
+  路径安全验证，并要求显式的用户确认。
 - `WindowsRecycleBinService` 依赖 `Microsoft.VisualBasic.FileIO.FileSystem`，仅在 Windows 上受支持（已加
   `[SupportedOSPlatform("windows")]` 标注）；单元测试全部通过 `IRecycleBinService` 的内存假实现验证，不会触发任何真实文件删除。
 - WiX 安装器骨架仅打包了单个可执行文件组件，未包含发布配置（自包含/单文件发布）、图标、卸载清理等生产级细节。

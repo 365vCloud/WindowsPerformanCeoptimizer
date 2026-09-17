@@ -9,8 +9,8 @@ namespace WPO.Core.DependencyInjection;
 /// <summary>
 /// Registers the core cleanup services (safety validator, preview/execution
 /// services, recycle bin abstraction, and audit subsystem) into an
-/// <see cref="IServiceCollection"/>. Scanners are application-specific and
-/// must be registered separately by the host via <see cref="ICleanupScanner"/>.
+/// <see cref="IServiceCollection"/>, including the conservative current-user
+/// Temp scanner used by the preview-only application.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -26,6 +26,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAuditLogMasker, AuditLogMasker>();
         services.AddSingleton<IAuditLogger, AuditLogger>();
         services.AddSingleton<IAuditLogExporter, AuditLogExporter>();
+        services.AddSingleton<TemporaryFileScannerOptions>();
+        services.AddSingleton<ICleanupScanner, SafeTemporaryFileScanner>();
         services.AddSingleton<ICleanupPreviewService, CleanupPreviewService>();
         services.AddSingleton<ICleanupExecutionService, CleanupExecutionService>();
 
