@@ -9,12 +9,13 @@ Windows 回收站，绝不会自动执行永久删除。
 ```
 .
 ├─ src-tauri/            Tauri v2 后端（Rust）
-│  ├─ Cargo.toml         crate 依赖（tauri、serde、chrono、uuid、regex、once_cell、trash）
+│  ├─ Cargo.toml         crate 依赖（tauri、serde、chrono、uuid、regex、once_cell、trash、windows-sys）
 │  ├─ tauri.conf.json    应用/窗口/CSP/打包配置（版本 2.0.0）
 │  ├─ capabilities/      仅暴露自定义 command，不授予 shell/fs/process 插件权限
 │  ├─ icons/             应用图标（占位图，见下方“已知限制”）
 │  └─ src/
-│     ├─ main.rs / lib.rs   Tauri Builder、command 注册
+│     ├─ main.rs / lib.rs   Tauri Builder、panic hook、启动错误处理
+│     ├─ crash.rs           崩溃日志写入（LocalAppData）+ Win32 MessageBox 中文错误提示
 │     ├─ commands.rs        暴露给前端的 Tauri command（指标/进程/启动项/扫描/取消/复核/执行/审计/导出）
 │     └─ core/
 │        ├─ path_safety.rs  路径安全验证器（白名单/黑名单/遍历/驱动器根/重解析点解析）
@@ -62,6 +63,10 @@ Windows 回收站，绝不会自动执行永久删除。
 - **导出**（`core::export::export_report`）：UTF-8（无 BOM）CSV/JSON 写入
   `%LocalAppData%\WindowsPerformanceOptimizer\reports\`；CSV 导出包含公式注入防护（`=`/`+`/`-`/`@` 开头的
   单元格会被加前缀 `'`）。
+- **启动失败可见化**（`main.rs` / `lib.rs` / `crash.rs`）：应用启动前安装 `std::panic::set_hook`；
+  所有 panic 以及 `tauri::Builder::run(...)` 返回的错误都会写入
+  `%LocalAppData%\WindowsPerformanceOptimizer\logs\crash-*.log`，仅记录错误类型、消息和源码位置，并通过
+  Win32 `MessageBoxW` 弹出中文提示，不再出现“安装后双击没有任何反应”的静默退出。
 
 ## 前端交互与“不自动清理”约束
 
@@ -84,6 +89,9 @@ Windows 回收站，绝不会自动执行永久删除。
 - Node.js（仅用于运行 `@tauri-apps/cli`；前端本身无构建步骤）
 - .NET 8 SDK（仅用于构建 WiX MSI 安装器、以及可选的 legacy WPF/测试项目）
 - Windows（Tauri 打包、WiX、回收站集成均为 Windows 专用）
+- Microsoft Edge WebView2 Runtime：Windows 11 与多数 Windows 10 机器通常已自带；若缺失，Tauri 自带安装器
+  现使用 `embedBootstrapper`，而本仓库的自定义 WiX MSI 仍要求目标机预装 Runtime（失败时会看到中文错误弹窗
+  和 crash log 路径）。
 
 本仓库已提交 `src-tauri/Cargo.lock` 与 `package-lock.json`，可直接复现依赖版本。
 
@@ -118,12 +126,24 @@ dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
 
 ### 本次实际构建结果（在本机验证过）
 
-- `cargo test`：Rust 单元测试 **20 项全部通过**（路径安全 6 项、扫描器 5 项、清理执行 6 项、审计脱敏 3 项）。
-- `npx tauri build` / `npm run build`：**构建成功**，生成 `wpo-app.exe`、Tauri 自带 MSI 与 NSIS 安装包。
+- `cargo build --release`：**构建成功**，生成更新后的 `src-tauri\target\release\wpo-app.exe`。
+- `cargo test`：Rust 单元测试 **22 项全部通过**（原路径安全/扫描/清理/审计测试 + 启动诊断相关编译回归覆盖）。
+- `npx tauri build` / `npm run build`：**构建成功**，生成 `wpo-app.exe`、Tauri 自带 MSI 与 NSIS 安装包；当前
+  `tauri.conf.json` 使用 `embedBootstrapper`，安装包会携带 WebView2 引导程序而不是在安装时再在线下载。
 - `dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release`：**构建成功**，生成
-  `installer\WPO.Installer\bin\Release\WPO.Installer.msi`（Version 2.0.0.0，UpgradeCode 与 v1 保持一致）。
+  `installer\WPO.Installer\bin\Release\WPO.Installer.msi`（Version 2.0.0.0，UpgradeCode 与 v1 保持一致，
+  同版本重建包也允许通过 `MajorUpgrade AllowSameVersionUpgrades="yes"` 替换旧安装）。
 - `Validate-Msi.ps1`：**静态验证通过**（无 CustomAction、无 Registry 表、包含 `WindowsPerformanceOptimizer.exe`、
   含 MajorUpgrade 元数据、安装到 `WindowsPerformanceOptimizer` 目录）。
+- **实际安装/启动/卸载验证通过**：
+  1. 先静默安装修复前 MSI，再静默安装修复后、版本号仍为 `2.0.0.0` 的 MSI；
+  2. 安装目录中的 `WindowsPerformanceOptimizer.exe` 哈希从
+     `D39A1648E35B63B167E7931F12887536D88BA4B8E40D8C53DFA526B83A356FE4`
+     变为
+     `B47E9E8518F45E91F1AFC85765DD9F3850AEC41F60EC1D067FEA1636C98959F1`，
+     证明同版本重建包确实替换了旧 exe，而不是保留 stale 文件；
+  3. 启动安装后的 exe，PowerShell 读到 `MainWindowTitle = Windows Performance Optimizer`，确认窗口真正出现；
+  4. 静默卸载后 `C:\Program Files\WindowsPerformanceOptimizer\WindowsPerformanceOptimizer.exe` 与安装目录均已清理。
 - `dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj`：旧 .NET 核心测试 **55 项全部通过**（作为参考实现
   保留，未随本次迁移改动其逻辑）。
 - `dotnet build legacy\WPO.App\WPO.App.csproj -c Release`：legacy WPF 项目本身仍可独立构建（仅证明未被破坏），
@@ -138,14 +158,30 @@ dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
 
 - `installer\WPO.Installer\Product.wxs` 的 `Package` 版本号为 `2.0.0.0`；`UpgradeCode` 与 v1 保持不变
   （`6f2b6f1e-6f6b-4a1a-9c1b-8b1a2f2e9d10`），确保旧版本可以被 `MajorUpgrade` 正常升级/覆盖安装。
+- `MajorUpgrade` 显式启用了 `AllowSameVersionUpgrades="yes"`：当支持/测试场景需要“同一版本号、重新打包的新 MSI”
+  去替换旧安装时，Windows Installer 会先卸载旧 ProductCode 再安装新包，避免保留 stale exe。
 - 安装到 `C:\Program Files\WindowsPerformanceOptimizer\WindowsPerformanceOptimizer.exe`（即 Tauri 构建产出的
   `wpo-app.exe`，安装时改名为更具描述性的文件名）。
 - 保留开始菜单快捷方式（非广告快捷方式，指向已安装的 exe，不需要写注册表）。
 - 沿用 v1 的安全约束：无 `CustomAction`、无 `Registry` 表写入、标准 `MajorUpgrade`/安装/卸载/修复流程。
 - **不再**打包 `WPO.App.exe`（旧 WPF 主程序）；`WPO.Installer.wixproj` 不再引用/发布 `legacy\WPO.App`。
-- 目标机器需要已安装 WebView2 Runtime（Windows 10 2004+ / Windows 11 通常已预装；`tauri.conf.json` 中
-  `webviewInstallMode` 设为 `downloadBootstrapper`，Tauri 自带的 NSIS/MSI 安装器可自动引导安装，但本仓库
-  自带的 WiX MSI 不包含该引导逻辑，仅打包应用本体）。
+- Tauri 自带 MSI/NSIS 安装器的 `webviewInstallMode` 已改为 `embedBootstrapper`：
+  - **优点**：目标机缺少 WebView2 时，不必依赖安装当下再联网下载；
+  - **代价**：安装包体积会比 `downloadBootstrapper` 更大；
+  - **已有 Runtime 的机器**：会直接复用现有 WebView2，不会重复安装。
+- 本仓库自定义 WiX MSI 仍只打包应用本体，不内嵌 WebView2 安装逻辑；因此离线环境若使用该 MSI，建议先确认
+  WebView2 Runtime 已存在。若缺失，应用现在会弹出中文错误框，并把诊断写入
+  `%LocalAppData%\WindowsPerformanceOptimizer\logs\crash-*.log`。
+
+### 重建 MSI 的建议流程
+
+1. **正式发布优先递增版本号**（`tauri.conf.json` / `Product.wxs`），让标准 MajorUpgrade 路径处理升级。
+2. 若是支持/热修复场景，必须保持版本号不变时，可直接重建 MSI；仓库内的 WiX 配置已允许同版本替换旧安装。
+3. 构建顺序保持为：`cargo build --release` → `npx tauri build` → `dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release` → `Validate-Msi.ps1`。
+4. 若用户反馈自定义 WiX MSI 安装后无法启动，优先检查：
+   - 目标机是否安装 WebView2 Runtime；
+   - `%LocalAppData%\WindowsPerformanceOptimizer\logs\crash-*.log` 中的错误类型/消息/位置；
+   - 当前安装包是否真的是最新重建产物。
 
 ## 已知限制 / 后续工作
 

@@ -11,7 +11,13 @@
       these two ICEs is the standard approach - no Registry table rows are
       added by doing so.
     -->
-    <SuppressIces>ICE43;ICE57</SuppressIces>
+    <!--
+      ICE61 warns when AllowSameVersionUpgrades="yes" intentionally permits
+      reinstalling a rebuilt MSI that keeps the same ProductVersion. That is
+      a deliberate choice here so support can replace a stale exe with a
+      freshly rebuilt same-version package.
+    -->
+    <SuppressIces>ICE43;ICE57;ICE61</SuppressIces>
     <RepoRoot>$(MSBuildProjectDirectory)\..\..\</RepoRoot>
     <TauriReleaseDir>$(RepoRoot)src-tauri\target\release\</TauriReleaseDir>
     <TauriExePath>$(TauriReleaseDir)wpo-app.exe</TauriExePath>

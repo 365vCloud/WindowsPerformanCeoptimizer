@@ -6,7 +6,8 @@
            UpgradeCode="6f2b6f1e-6f6b-4a1a-9c1b-8b1a2f2e9d10"
            Scope="perMachine">
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="ProgramFiles64Folder">

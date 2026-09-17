@@ -20,8 +20,7 @@ static WINDOWS_PATH_PATTERN: Lazy<Regex> =
 /// Directory + filename mirroring the previous WPF app's location so any
 /// existing on-disk audit history remains discoverable after the migration.
 pub fn log_path() -> PathBuf {
-    let local_app_data =
-        std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
+    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
     PathBuf::from(local_app_data)
         .join("WindowsPerformanceOptimizer")
         .join("audit.jsonl")
@@ -30,7 +29,7 @@ pub fn log_path() -> PathBuf {
 /// Strips CR/LF (log injection defense), redacts obvious secret-looking
 /// tokens, replaces Windows path-like substrings with `<path>`, then masks
 /// the current username/profile directory with `<user>`.
-fn sanitize_message(message: &str) -> String {
+pub(crate) fn sanitize_log_text(message: &str) -> String {
     let flattened = message.replace(['\r', '\n'], " ");
     let flattened = flattened.trim();
     let without_secrets = SECRET_PATTERN.replace_all(flattened, "$1$2<redacted>");
@@ -79,7 +78,7 @@ fn replace_case_insensitive(haystack: &str, needle: &str, replacement: &str) -> 
 }
 
 pub fn sanitize_entry(mut entry: AuditLogEntry) -> AuditLogEntry {
-    entry.message = sanitize_message(&entry.message);
+    entry.message = sanitize_log_text(&entry.message);
     entry.masked_path = entry.masked_path.map(|p| sanitize_path(&p));
     entry
 }
@@ -137,21 +136,21 @@ mod tests {
 
     #[test]
     fn masks_secret_looking_tokens() {
-        let msg = sanitize_message("login failed password=hunter2 for user");
+        let msg = sanitize_log_text("login failed password=hunter2 for user");
         assert!(!msg.contains("hunter2"));
         assert!(msg.contains("<redacted>"));
     }
 
     #[test]
     fn masks_windows_paths() {
-        let msg = sanitize_message(r"deleted file C:\Users\alice\AppData\Local\Temp\a.tmp");
+        let msg = sanitize_log_text(r"deleted file C:\Users\alice\AppData\Local\Temp\a.tmp");
         assert!(!msg.to_lowercase().contains("alice"));
         assert!(msg.contains("<path>"));
     }
 
     #[test]
     fn strips_newlines_to_prevent_log_injection() {
-        let msg = sanitize_message("line1\nFAKE_ENTRY\r\nline2");
+        let msg = sanitize_log_text("line1\nFAKE_ENTRY\r\nline2");
         assert!(!msg.contains('\n'));
         assert!(!msg.contains('\r'));
     }
