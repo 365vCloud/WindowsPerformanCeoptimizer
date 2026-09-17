@@ -66,11 +66,12 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <Expander Grid.Row="4" Header="当前用户 Temp 文件安全预览" IsExpanded="False">
+        <Expander Grid.Row="4" Header="当前用户 Temp 文件安全预览与清理确认" IsExpanded="False">
             <Grid Margin="0,8,0,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="180" />
+                    <RowDefinition Height="220" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -94,14 +95,45 @@
                         <TextBlock x:Name="TotalSizeTextBlock" Text="0 B" FontSize="18" FontWeight="SemiBold" />
                     </StackPanel>
                 </Grid>
-                <DataGrid Grid.Row="1" x:Name="CandidatesDataGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                <DataGrid Grid.Row="1" x:Name="CandidatesDataGrid" AutoGenerateColumns="False"
                           CanUserAddRows="False" HeadersVisibility="Column" Margin="0,8,0,0">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="路径" Binding="{Binding FullPath}" Width="*" />
-                        <DataGridTextColumn Header="大小" Binding="{Binding DisplaySize}" Width="130" />
-                        <DataGridTextColumn Header="风险" Binding="{Binding Risk}" Width="100" />
+                        <DataGridTemplateColumn Header="选择" Width="56">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
+                                              IsEnabled="{Binding IsSelectable}"
+                                              ToolTip="{Binding SelectableReason}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="路径" Binding="{Binding FullPath}" Width="*" IsReadOnly="True" />
+                        <DataGridTextColumn Header="大小" Binding="{Binding DisplaySize}" Width="110" IsReadOnly="True" />
+                        <DataGridTextColumn Header="风险" Binding="{Binding RiskDisplay}" Width="90" IsReadOnly="True" />
+                        <DataGridTextColumn Header="验证状态" Binding="{Binding ValidationDisplay}" Width="120" IsReadOnly="True" />
                     </DataGrid.Columns>
                 </DataGrid>
+                <Grid Grid.Row="2" Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="SelectAllSafeButton" Content="全选安全项目" Width="120" Height="30"
+                            Click="SelectAllSafeButton_Click" />
+                    <Button x:Name="ClearSelectionButton" Grid.Column="1" Content="清空选择" Width="100" Height="30"
+                            Margin="8,0,0,0" Click="ClearSelectionButton_Click" />
+                    <CheckBox x:Name="ConfirmMediumRiskCheckBox" Grid.Column="2" Content="我已确认包含中风险清理项"
+                              VerticalAlignment="Center" Margin="16,0,0,0" />
+                    <TextBlock x:Name="SelectionSummaryTextBlock" Grid.Column="4" VerticalAlignment="Center"
+                               Margin="8,0,16,0" Foreground="DimGray" Text="已选择 0 项，共 0 B" />
+                    <Button x:Name="PrepareCleanupButton" Grid.Column="5" Content="准备清理" Width="110" Height="30"
+                            IsEnabled="False" Click="PrepareCleanupButton_Click" />
+                </Grid>
             </Grid>
         </Expander>
 

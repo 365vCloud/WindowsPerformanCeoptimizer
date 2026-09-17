@@ -223,6 +223,101 @@ public class CleanupExecutionServiceTests
         Assert.Empty(recycleBin.MovedToRecycleBin);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_HighRiskItem_WithConfirmation_IsDeleted()
+    {
+        var item = MakeItem(RiskLevel.High);
+        var preview = new CleanupPreviewResult { Items = new[] { item }, GeneratedAtUtc = DateTimeOffset.UtcNow };
+        var recycleBin = new FakeRecycleBinService();
+        var service = CreateService(recycleBin, out _);
+
+        var selection = new CleanupSelection
+        {
+            SelectedItemIds = new HashSet<Guid> { item.Id },
+            ConfirmHighRisk = true
+        };
+
+        var result = await service.ExecuteAsync(preview, selection, CancellationToken.None);
+
+        Assert.Equal(CleanupItemStatus.Deleted, result.Items.Single().Status);
+        Assert.Contains(item.FullPath, recycleBin.MovedToRecycleBin);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_NothingSelected_EveryItemIsSkipped_NothingDeleted()
+    {
+        var first = MakeItem();
+        var second = MakeItem();
+        var preview = new CleanupPreviewResult { Items = new[] { first, second }, GeneratedAtUtc = DateTimeOffset.UtcNow };
+        var recycleBin = new FakeRecycleBinService();
+        var service = CreateService(recycleBin, out _);
+
+        var selection = new CleanupSelection { SelectedItemIds = new HashSet<Guid>() };
+
+        var result = await service.ExecuteAsync(preview, selection, CancellationToken.None);
+
+        Assert.All(result.Items, i => Assert.Equal(CleanupItemStatus.Skipped, i.Status));
+        Assert.Equal(0, result.TotalBytesFreed);
+        Assert.Empty(recycleBin.MovedToRecycleBin);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AlreadyCancelledToken_MarksEverySelectedItemCancelled_DeletesNothing()
+    {
+        var first = MakeItem();
+        var second = MakeItem();
+        var preview = new CleanupPreviewResult { Items = new[] { first, second }, GeneratedAtUtc = DateTimeOffset.UtcNow };
+        var recycleBin = new FakeRecycleBinService();
+        var service = CreateService(recycleBin, out _);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var selection = new CleanupSelection { SelectedItemIds = new HashSet<Guid> { first.Id, second.Id } };
+
+        var result = await service.ExecuteAsync(preview, selection, cts.Token);
+
+        Assert.True(result.WasCancelled);
+        Assert.All(result.Items, i => Assert.Equal(CleanupItemStatus.Cancelled, i.Status));
+        Assert.Empty(recycleBin.MovedToRecycleBin);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReValidatesRightBeforeDeletion_EvenWhenPreviewOnceConsideredItSafe()
+    {
+        // Simulates a path that was safe when the preview/scan ran but is no
+        // longer allowed by the time execution actually happens (e.g. moved
+        // outside the allow-list in between); the execution service must not
+        // trust the earlier preview-time validation.
+        var item = MakeItem();
+        var preview = new CleanupPreviewResult { Items = new[] { item }, GeneratedAtUtc = DateTimeOffset.UtcNow };
+        var recycleBin = new FakeRecycleBinService();
+        var logger = new AuditLogger(new AuditLogMasker());
+        var flakyValidator = new BecameUnsafePathSafetyValidator(item.FullPath);
+        var service = new CleanupExecutionService(recycleBin, flakyValidator, logger);
+
+        var selection = new CleanupSelection { SelectedItemIds = new HashSet<Guid> { item.Id } };
+
+        var result = await service.ExecuteAsync(preview, selection, CancellationToken.None);
+
+        Assert.Equal(CleanupItemStatus.Failed, result.Items.Single().Status);
+        Assert.Empty(recycleBin.MovedToRecycleBin);
+        Assert.Equal(0, result.TotalBytesFreed);
+    }
+
+    private sealed class BecameUnsafePathSafetyValidator : IPathSafetyValidator
+    {
+        private readonly string _watchedPath;
+
+        public BecameUnsafePathSafetyValidator(string watchedPath) => _watchedPath = watchedPath;
+
+        // Always rejects on re-validation, modeling the "no longer safe by
+        // execution time" scenario regardless of any earlier preview pass.
+        public PathValidationResult Validate(string candidatePath) =>
+            candidatePath == _watchedPath
+                ? PathValidationResult.Reject("Path is no longer within the allow-list.")
+                : PathValidationResult.Allow(candidatePath);
+    }
+
     private sealed class RejectingPathSafetyValidator : IPathSafetyValidator
     {
         private readonly string _pathToReject;

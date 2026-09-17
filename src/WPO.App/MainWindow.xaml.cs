@@ -1,6 +1,10 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
 using System.Windows;
 using WPO.Core.Cleanup;
 using WPO.Core.Diagnostics;
+using WPO.Core.Security;
 using WPO.Core.Startup;
 using WPO.Domain.Enums;
 using WPO.Domain.Models;
@@ -8,20 +12,31 @@ using WPO.Domain.Models;
 namespace WPO.App;
 
 /// <summary>
-/// Preview-only dashboard for safe Temp candidates. It deliberately exposes no
-/// deletion or execution control.
+/// Dashboard for read-only diagnostics plus a review/confirm-only cleanup flow
+/// for the current-user Temp preview. This window never deletes anything by
+/// itself: selecting and "准备清理" only opens a separate modal confirmation
+/// dialog (<see cref="ConfirmCleanupWindow"/>), and only after a second
+/// explicit confirmation there does a modal progress window
+/// (<see cref="CleanupExecutionWindow"/>) invoke the existing
+/// <see cref="ICleanupExecutionService"/>. High-risk and validation-failed
+/// items can never be selected; medium-risk items default to unselected and
+/// require an explicit risk acknowledgement checkbox before they can be
+/// included in a cleanup request.
 /// </summary>
 public partial class MainWindow : Window
 {
     private readonly IServiceProvider _services;
+    private readonly ObservableCollection<CleanupCandidateViewModel> _candidates = new();
     private CancellationTokenSource? _scanCancellation;
     private CancellationTokenSource? _diagnosticsCancellation;
     private CancellationTokenSource? _startupCheckCancellation;
+    private CleanupPreviewResult? _lastPreview;
 
     public MainWindow(IServiceProvider services)
     {
         InitializeComponent();
         _services = services;
+        CandidatesDataGrid.ItemsSource = _candidates;
     }
 
     private async void RefreshDiagnosticsButton_Click(object sender, RoutedEventArgs e)
@@ -82,7 +97,9 @@ public partial class MainWindow : Window
         DiagnosticsStatusTextBlock.Text = "正在取消诊断...";
     }
 
-    private async void PreviewButton_Click(object sender, RoutedEventArgs e)
+    private async void PreviewButton_Click(object sender, RoutedEventArgs e) => await RefreshPreviewAsync();
+
+    private async Task RefreshPreviewAsync()
     {
         PreviewButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
@@ -98,10 +115,8 @@ public partial class MainWindow : Window
             }
 
             var result = await previewService.BuildPreviewAsync(_scanCancellation.Token);
-            CandidatesDataGrid.ItemsSource = result.Items.Select(item => new PreviewRow(item));
-            CandidateCountTextBlock.Text = result.TotalItemCount.ToString("N0");
-            TotalSizeTextBlock.Text = FormatSize(result.TotalSizeBytes);
-            StatusTextBlock.Text = "扫描完成。结果仅供预览，未执行任何文件操作。";
+            PopulateCandidates(result);
+            StatusTextBlock.Text = "扫描完成。请勾选要清理的项目后点击“准备清理”进行确认。";
         }
         catch (OperationCanceledException)
         {
@@ -120,11 +135,182 @@ public partial class MainWindow : Window
         }
     }
 
+    private void PopulateCandidates(CleanupPreviewResult result)
+    {
+        _lastPreview = result;
+
+        foreach (var vm in _candidates)
+        {
+            vm.PropertyChanged -= CandidateViewModel_PropertyChanged;
+        }
+
+        _candidates.Clear();
+
+        var validator = _services.GetService(typeof(IPathSafetyValidator)) as IPathSafetyValidator;
+        foreach (var item in result.Items)
+        {
+            // Re-validate right now (not just trusting the preview's own earlier
+            // validation) so the UI can honestly show validation status even if
+            // the filesystem changed between scan and display.
+            var isValid = validator is null || validator.Validate(item.FullPath).IsAllowed;
+            var vm = new CleanupCandidateViewModel(item, isValid);
+            vm.PropertyChanged += CandidateViewModel_PropertyChanged;
+            _candidates.Add(vm);
+        }
+
+        CandidateCountTextBlock.Text = result.TotalItemCount.ToString("N0");
+        TotalSizeTextBlock.Text = FormatSize(result.TotalSizeBytes);
+        ConfirmMediumRiskCheckBox.IsChecked = false;
+        UpdateSelectionSummary();
+    }
+
+    private void CandidateViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(CleanupCandidateViewModel.IsSelected))
+        {
+            UpdateSelectionSummary();
+        }
+    }
+
+    private void UpdateSelectionSummary()
+    {
+        var selected = _candidates.Where(c => c.IsSelected).ToList();
+        var totalBytes = selected.Sum(c => c.Item.SizeBytes);
+        SelectionSummaryTextBlock.Text = $"已选择 {selected.Count} 项，共 {FormatSize(totalBytes)}";
+        PrepareCleanupButton.IsEnabled = selected.Count > 0;
+    }
+
+    private void SelectAllSafeButton_Click(object sender, RoutedEventArgs e)
+    {
+        // "安全项目" intentionally means low-risk, currently-valid items only;
+        // medium/high-risk items always require a separate, explicit action.
+        foreach (var candidate in _candidates)
+        {
+            if (candidate.IsSelectable && candidate.Item.RiskLevel == RiskLevel.Low)
+            {
+                candidate.IsSelected = true;
+            }
+        }
+    }
+
+    private void ClearSelectionButton_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var candidate in _candidates)
+        {
+            candidate.IsSelected = false;
+        }
+    }
+
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         CancelButton.IsEnabled = false;
         _scanCancellation?.Cancel();
         StatusTextBlock.Text = "正在取消扫描...";
+    }
+
+    private async void PrepareCleanupButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastPreview is null)
+        {
+            return;
+        }
+
+        var selected = _candidates.Where(c => c.IsSelected).ToList();
+        if (selected.Count == 0)
+        {
+            MessageBox.Show(this, "请先勾选至少一个待清理项目。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        // Defense-in-depth: re-validate every selected path again, right before
+        // opening the confirmation dialog, in addition to the execution
+        // service's own mandatory re-validation before deletion.
+        var validator = _services.GetService(typeof(IPathSafetyValidator)) as IPathSafetyValidator;
+        var invalidated = new List<CleanupCandidateViewModel>();
+        foreach (var candidate in selected)
+        {
+            var stillValid = validator is null || validator.Validate(candidate.Item.FullPath).IsAllowed;
+            if (!stillValid)
+            {
+                candidate.MarkInvalid();
+                candidate.IsSelected = false;
+                invalidated.Add(candidate);
+            }
+        }
+
+        if (invalidated.Count > 0)
+        {
+            UpdateSelectionSummary();
+            MessageBox.Show(
+                this,
+                $"{invalidated.Count} 个已选项目在准备清理前的重新安全校验中未通过，已自动取消勾选，不会被清理。请重新扫描后再试。",
+                "安全校验未通过",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        var hasHighRiskSelected = selected.Any(c => c.Item.RiskLevel == RiskLevel.High);
+        if (hasHighRiskSelected)
+        {
+            // High-risk items are never selectable from the grid; this only
+            // guards against a future regression.
+            MessageBox.Show(this, "高风险项目不允许通过此界面清理。", "已阻止", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var hasMediumRiskSelected = selected.Any(c => c.Item.RiskLevel == RiskLevel.Medium);
+        if (hasMediumRiskSelected && ConfirmMediumRiskCheckBox.IsChecked != true)
+        {
+            MessageBox.Show(
+                this,
+                "所选项目包含中风险文件，请先勾选“我已确认包含中风险清理项”后再准备清理。",
+                "需要风险确认",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        var totalBytes = selected.Sum(c => c.Item.SizeBytes);
+        var confirmWindow = new ConfirmCleanupWindow(selected.Count, totalBytes, hasMediumRiskSelected)
+        {
+            Owner = this
+        };
+
+        var confirmed = confirmWindow.ShowDialog();
+        if (confirmed != true)
+        {
+            // Cancel, closing the dialog, Escape, or Enter all land here and
+            // never execute anything.
+            return;
+        }
+
+        var executionService = _services.GetService(typeof(ICleanupExecutionService)) as ICleanupExecutionService;
+        if (executionService is null)
+        {
+            MessageBox.Show(this, "清理执行服务未注册。", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        var selection = new CleanupSelection
+        {
+            SelectedItemIds = selected.Select(c => c.Item.Id).ToHashSet(),
+            ConfirmMediumRisk = hasMediumRiskSelected,
+            ConfirmHighRisk = false,
+            DeletionMode = DeletionMode.RecycleBin,
+            ConfirmPermanentDeletion = false
+        };
+
+        var executionWindow = new CleanupExecutionWindow(executionService, _lastPreview, selection)
+        {
+            Owner = this
+        };
+        executionWindow.ShowDialog();
+
+        // The filesystem has now changed (items may have moved to the Recycle
+        // Bin); refresh the preview so stale rows are never shown as if they
+        // were still selectable.
+        await RefreshPreviewAsync();
     }
 
     private async void StartupCheckButton_Click(object sender, RoutedEventArgs e)
@@ -176,19 +362,7 @@ public partial class MainWindow : Window
         StartupStatusTextBlock.Text = "正在取消检查...";
     }
 
-    private static string FormatSize(long sizeBytes)
-    {
-        string[] units = ["B", "KB", "MB", "GB", "TB"];
-        var size = (double)sizeBytes;
-        var unitIndex = 0;
-        while (size >= 1024 && unitIndex < units.Length - 1)
-        {
-            size /= 1024;
-            unitIndex++;
-        }
-
-        return unitIndex == 0 ? $"{size:N0} {units[unitIndex]}" : $"{size:N1} {units[unitIndex]}";
-    }
+    private static string FormatSize(long sizeBytes) => SizeFormatter.Format(sizeBytes);
 
     private static string FormatPercent(MetricValue<double> value) =>
         value.IsAvailable ? $"{value.Value!.Value:N1}%" : "暂时无法获取";
@@ -203,18 +377,87 @@ public partial class MainWindow : Window
         DiagnosticsStatusTextBlock.Text = "暂时无法获取";
     }
 
-    private sealed record PreviewRow(string FullPath, string DisplaySize, string Risk)
+    /// <summary>
+    /// UI-only wrapper around a <see cref="CleanupItem"/> that tracks the
+    /// checkbox selection state and whether the item is currently allowed to
+    /// be selected at all. Never performs any deletion itself.
+    /// </summary>
+    private sealed class CleanupCandidateViewModel : INotifyPropertyChanged
     {
-        public PreviewRow(CleanupItem item)
-            : this(item.FullPath, FormatSize(item.SizeBytes), item.RiskLevel switch
-            {
-                RiskLevel.Low => "低风险",
-                RiskLevel.Medium => "中风险",
-                RiskLevel.High => "高风险",
-                _ => "未知"
-            })
+        private bool _isSelected;
+        private bool _isValid;
+
+        public CleanupCandidateViewModel(CleanupItem item, bool isValid)
         {
+            Item = item;
+            _isValid = isValid;
         }
+
+        public CleanupItem Item { get; }
+
+        public bool IsValid => _isValid;
+
+        /// <summary>
+        /// High-risk items and items that failed (re-)validation can never be
+        /// selected. Medium-risk items are selectable but default to
+        /// unselected and additionally require the window-level risk
+        /// acknowledgement checkbox before a cleanup request can proceed.
+        /// </summary>
+        public bool IsSelectable => _isValid && Item.RiskLevel != RiskLevel.High;
+
+        public string SelectableReason => (_isValid, Item.RiskLevel) switch
+        {
+            (false, _) => "未通过安全校验，无法清理。",
+            (true, RiskLevel.High) => "高风险项目不允许通过此界面清理。",
+            (true, RiskLevel.Medium) => "中风险项目：勾选后仍需在下方确认风险才能准备清理。",
+            _ => "低风险项目，可安全清理。"
+        };
+
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected == value)
+                {
+                    return;
+                }
+
+                _isSelected = value;
+                OnPropertyChanged(nameof(IsSelected));
+            }
+        }
+
+        public string FullPath => Item.FullPath;
+
+        public string DisplaySize => FormatSize(Item.SizeBytes);
+
+        public string RiskDisplay => Item.RiskLevel switch
+        {
+            RiskLevel.Low => "低风险",
+            RiskLevel.Medium => "中风险",
+            RiskLevel.High => "高风险",
+            _ => "未知"
+        };
+
+        public string ValidationDisplay => _isValid ? "验证通过" : "验证失败（不可清理）";
+
+        public void MarkInvalid()
+        {
+            if (_isValid)
+            {
+                _isValid = false;
+                OnPropertyChanged(nameof(IsValid));
+                OnPropertyChanged(nameof(IsSelectable));
+                OnPropertyChanged(nameof(ValidationDisplay));
+                OnPropertyChanged(nameof(SelectableReason));
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void OnPropertyChanged(string propertyName) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     private sealed record ProcessRow(
