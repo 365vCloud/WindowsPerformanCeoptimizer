@@ -6,10 +6,13 @@ param(
     [Parameter(ParameterSetName = 'Pfx')][string]$PfxPasswordEnvironmentVariable,
     [Parameter(Mandatory)][ValidatePattern('^https?://')][string]$TimestampUrl,
     [string]$SigntoolPath,
-    [string]$ReleaseDirectory = (Join-Path $PSScriptRoot "bin\SignedRelease")
+    [string]$ReleaseDirectory
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($ReleaseDirectory)) {
+    $ReleaseDirectory = Join-Path $PSScriptRoot "bin\SignedRelease"
+}
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $exePath = Join-Path $repoRoot 'src-tauri\target\release\wpo-app.exe'
 $msiPath = Join-Path $PSScriptRoot 'bin\Release\WPO.Installer.msi'

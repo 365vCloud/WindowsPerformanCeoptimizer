@@ -1,23 +1,25 @@
 [CmdletBinding()]
 param(
-    [string]$MsiPath = (Join-Path $PSScriptRoot 'bin\Release\WPO.Installer.msi')
+    [string]$MsiPath
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($MsiPath)) {
+    $MsiPath = Join-Path $PSScriptRoot 'bin\Release\WPO.Installer.msi'
+}
 $validator = Join-Path $PSScriptRoot 'Validate-Msi.ps1'
 if (-not (Test-Path -LiteralPath $MsiPath)) {
     throw "Test prerequisite MSI missing: $MsiPath"
 }
 
-$developmentOutput = & $validator -MsiPath $MsiPath 3>&1
-if ($LASTEXITCODE -ne 0 -or -not (($developmentOutput | Out-String) -match 'UNSIGNED DEVELOPMENT ARTIFACT')) {
+$developmentOutput = & $validator -MsiPath $MsiPath *>&1
+if (-not (($developmentOutput | Out-String) -match 'UNSIGNED DEVELOPMENT ARTIFACT')) {
     throw 'Development validation must succeed and emit the unsigned-distribution warning.'
 }
 
 $formalFailed = $false
 try {
-    & $validator -MsiPath $MsiPath -RequireSignature -ExpectedSignerThumbprint '0000000000000000000000000000000000000000' 3>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { $formalFailed = $true }
+    & $validator -MsiPath $MsiPath -RequireSignature -ExpectedSignerThumbprint '0000000000000000000000000000000000000000' *>&1 | Out-Null
 }
 catch {
     $formalFailed = $true

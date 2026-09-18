@@ -128,6 +128,6 @@ if ($RequireSignature) {
     Write-Host "MSI formal release validation passed: $MsiPath"
 }
 else {
-    Write-Warning "UNSIGNED DEVELOPMENT ARTIFACT — NOT FOR DISTRIBUTION"
+    Write-Warning "UNSIGNED DEVELOPMENT ARTIFACT - NOT FOR DISTRIBUTION"
     Write-Host "MSI development static validation passed: $MsiPath"
 }
