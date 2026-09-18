@@ -1,0 +1,32 @@
+## .NET
+bin/
+obj/
+*.user
+
+## VS / Rider
+.vs/
+.idea/
+
+## WiX
+*.wixobj
+*.wixpdb
+
+## Test / coverage
+TestResults/
+*.trx
+
+## OS
+Thumbs.db
+.DS_Store
+
+## Rust / Tauri
+/src-tauri/target/
+/target/
+src-tauri/gen/schemas/
+*.pdb
+
+## Node
+node_modules/
+
+## Tauri build artifacts
+src-tauri/target/release/bundle/

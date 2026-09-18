@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for the main window: only the app's own custom cleanup commands are exposed. No shell, fs, or process plugin permissions are granted.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

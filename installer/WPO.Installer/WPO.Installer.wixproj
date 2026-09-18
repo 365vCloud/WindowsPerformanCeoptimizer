@@ -1,0 +1,51 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <!--
+      ICE43/ICE57 flag that the Start Menu shortcut's component uses the exe
+      (a per-machine file) as its KeyPath instead of an HKCU registry value.
+      That guidance targets per-user installs; this package is perMachine-
+      only (Scope="perMachine"), so a file KeyPath is valid and suppressing
+      these two ICEs is the standard approach - no Registry table rows are
+      added by doing so.
+    -->
+    <!--
+      ICE61 warns when AllowSameVersionUpgrades="yes" intentionally permits
+      reinstalling a rebuilt MSI that keeps the same ProductVersion. That is
+      a deliberate choice here so support can replace a stale exe with a
+      freshly rebuilt same-version package.
+    -->
+    <SuppressIces>ICE43;ICE57;ICE61</SuppressIces>
+    <RepoRoot>$(MSBuildProjectDirectory)\..\..\</RepoRoot>
+    <TauriReleaseDir>$(RepoRoot)src-tauri\target\release\</TauriReleaseDir>
+    <TauriExePath>$(TauriReleaseDir)wpo-app.exe</TauriExePath>
+    <TauriBuildManifestPath>$(TauriReleaseDir)wpo-app.build-manifest.json</TauriBuildManifestPath>
+    <BuildTauriBeforeMsi Condition="'$(BuildTauriBeforeMsi)' == ''">true</BuildTauriBeforeMsi>
+    <DefineConstants>$(DefineConstants);TauriExePath=$(TauriExePath)</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Build the exact Tauri executable consumed by WiX unless a release orchestrator supplies one. -->
+  <Target Name="BuildTauriRelease" Condition="'$(BuildTauriBeforeMsi)' == 'true'">
+    <RemoveDir Directories="$(TauriReleaseDir)" />
+    <Exec WorkingDirectory="$(RepoRoot)"
+          Command="&quot;$(ComSpec)&quot; /d /c &quot;&quot;$(TauriCommand)&quot; build --no-bundle&quot;"
+          EnvironmentVariables="npm_config_audit=false;npm_config_fund=false" />
+  </Target>
+
+  <PropertyGroup>
+    <TauriCommand Condition="'$(TauriCommand)' == ''">$(RepoRoot)node_modules\.bin\tauri.cmd</TauriCommand>
+  </PropertyGroup>
+
+  <Target Name="CreateTauriBuildManifest" DependsOnTargets="BuildTauriRelease" BeforeTargets="_CreateProjectDefineConstants">
+    <Error Condition="!Exists('$(TauriExePath)')"
+           Text="Tauri release executable not found at '$(TauriExePath)' after the release build." />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='Stop'; $stream=[IO.File]::OpenRead('$(TauriExePath)'); try { $bytes=[Security.Cryptography.SHA256]::Create().ComputeHash($stream) } finally { $stream.Dispose() }; $hash=[BitConverter]::ToString($bytes).Replace('-',''); [ordered]@{ schemaVersion=1; generatedUtc=[DateTime]::UtcNow.ToString('o'); file='wpo-app.exe'; sha256=$hash } | ConvertTo-Json | Set-Content -LiteralPath '$(TauriBuildManifestPath)' -Encoding UTF8&quot;" />
+  </Target>
+
+  <Target Name="VerifyExpectedTauriHash" DependsOnTargets="CreateTauriBuildManifest" BeforeTargets="_CreateProjectDefineConstants"
+          Condition="'$(ExpectedTauriExeSha256)' != ''">
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='Stop'; $stream=[IO.File]::OpenRead('$(TauriExePath)'); try { $bytes=[Security.Cryptography.SHA256]::Create().ComputeHash($stream) } finally { $stream.Dispose() }; $actual=[BitConverter]::ToString($bytes).Replace('-',''); if ($actual -ne '$(ExpectedTauriExeSha256)') { throw 'The Tauri executable hash does not match ExpectedTauriExeSha256.' }&quot;" />
+  </Target>
+</Project>

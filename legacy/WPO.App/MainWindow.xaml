@@ -1,0 +1,177 @@
+<Window x:Class="WPO.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Windows 性能优化器" Height="860" Width="1080" MinHeight="620" MinWidth="800">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="只读性能诊断" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,6" />
+        <TextBlock Grid.Row="1" Text="仅收集当前系统状态；不会结束进程、修改优先级、注册表或系统配置。"
+                   Foreground="DimGray" Margin="0,0,0,16" />
+
+        <Grid Grid.Row="2" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button x:Name="RefreshDiagnosticsButton" Content="刷新诊断" Width="110" Height="32"
+                    Click="RefreshDiagnosticsButton_Click" />
+            <Button x:Name="CancelDiagnosticsButton" Grid.Column="1" Content="取消诊断" Width="110" Height="32"
+                    Margin="8,0,0,0" IsEnabled="False" Click="CancelDiagnosticsButton_Click" />
+            <TextBlock x:Name="DiagnosticsStatusTextBlock" Grid.Column="2" VerticalAlignment="Center"
+                       Margin="16,0,0,0" Foreground="DimGray" Text="准备就绪" />
+            <StackPanel Grid.Column="3" Margin="16,0,0,0">
+                <TextBlock Text="CPU" Foreground="DimGray" />
+                <TextBlock x:Name="CpuTextBlock" Text="暂时无法获取" FontSize="16" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Grid.Column="4" Margin="24,0,0,0">
+                <TextBlock Text="内存" Foreground="DimGray" />
+                <TextBlock x:Name="MemoryTextBlock" Text="暂时无法获取" FontSize="16" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Grid.Column="5" Margin="24,0,0,0">
+                <TextBlock Text="系统盘剩余" Foreground="DimGray" />
+                <TextBlock x:Name="DiskTextBlock" Text="暂时无法获取" FontSize="16" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Grid.Column="6" Margin="24,0,0,0">
+                <TextBlock Text="进程数" Foreground="DimGray" />
+                <TextBlock x:Name="ProcessCountTextBlock" Text="0" FontSize="16" FontWeight="SemiBold" />
+            </StackPanel>
+        </Grid>
+
+        <DataGrid Grid.Row="3" x:Name="ProcessesDataGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                  CanUserAddRows="False" HeadersVisibility="Column" Margin="0,0,0,16">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="进程" Binding="{Binding Name}" Width="140" />
+                <DataGridTextColumn Header="PID" Binding="{Binding ProcessId}" Width="80" />
+                <DataGridTextColumn Header="内存" Binding="{Binding Memory}" Width="110" />
+                <DataGridTextColumn Header="CPU" Binding="{Binding Cpu}" Width="100" />
+                <DataGridTextColumn Header="可执行路径" Binding="{Binding ExecutablePath}" Width="*" />
+                <DataGridTextColumn Header="发布者" Binding="{Binding Publisher}" Width="160" />
+                <DataGridTextColumn Header="签名" Binding="{Binding Signature}" Width="100" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Expander Grid.Row="4" Header="当前用户 Temp 文件安全预览与清理确认" IsExpanded="False">
+            <Grid Margin="0,8,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="220" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="PreviewButton" Content="开始扫描" Width="110" Height="32" Click="PreviewButton_Click" />
+                    <Button x:Name="CancelButton" Grid.Column="1" Content="取消扫描" Width="110" Height="32"
+                            Margin="8,0,0,0" IsEnabled="False" Click="CancelButton_Click" />
+                    <TextBlock x:Name="StatusTextBlock" Grid.Column="2" VerticalAlignment="Center"
+                               Margin="16,0,0,0" Foreground="DimGray" Text="准备就绪" />
+                    <StackPanel Grid.Column="3" Margin="16,0,0,0">
+                        <TextBlock Text="候选数" Foreground="DimGray" />
+                        <TextBlock x:Name="CandidateCountTextBlock" Text="0" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="4" Margin="24,0,0,0">
+                        <TextBlock Text="总大小" Foreground="DimGray" />
+                        <TextBlock x:Name="TotalSizeTextBlock" Text="0 B" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                </Grid>
+                <DataGrid Grid.Row="1" x:Name="CandidatesDataGrid" AutoGenerateColumns="False"
+                          CanUserAddRows="False" HeadersVisibility="Column" Margin="0,8,0,0">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="选择" Width="56">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
+                                              IsEnabled="{Binding IsSelectable}"
+                                              ToolTip="{Binding SelectableReason}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="路径" Binding="{Binding FullPath}" Width="*" IsReadOnly="True" />
+                        <DataGridTextColumn Header="大小" Binding="{Binding DisplaySize}" Width="110" IsReadOnly="True" />
+                        <DataGridTextColumn Header="风险" Binding="{Binding RiskDisplay}" Width="90" IsReadOnly="True" />
+                        <DataGridTextColumn Header="验证状态" Binding="{Binding ValidationDisplay}" Width="120" IsReadOnly="True" />
+                    </DataGrid.Columns>
+                </DataGrid>
+                <Grid Grid.Row="2" Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="SelectAllSafeButton" Content="全选安全项目" Width="120" Height="30"
+                            Click="SelectAllSafeButton_Click" />
+                    <Button x:Name="ClearSelectionButton" Grid.Column="1" Content="清空选择" Width="100" Height="30"
+                            Margin="8,0,0,0" Click="ClearSelectionButton_Click" />
+                    <CheckBox x:Name="ConfirmMediumRiskCheckBox" Grid.Column="2" Content="我已确认包含中风险清理项"
+                              VerticalAlignment="Center" Margin="16,0,0,0" />
+                    <TextBlock x:Name="SelectionSummaryTextBlock" Grid.Column="4" VerticalAlignment="Center"
+                               Margin="8,0,16,0" Foreground="DimGray" Text="已选择 0 项，共 0 B" />
+                    <Button x:Name="PrepareCleanupButton" Grid.Column="5" Content="准备清理" Width="110" Height="30"
+                            IsEnabled="False" Click="PrepareCleanupButton_Click" />
+                </Grid>
+            </Grid>
+        </Expander>
+
+        <Expander Grid.Row="5" Header="启动项检查（只读）" IsExpanded="False" Margin="0,12,0,0">
+            <Grid Margin="0,8,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="220" />
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="StartupCheckButton" Content="检查启动项" Width="110" Height="32"
+                            Click="StartupCheckButton_Click" />
+                    <Button x:Name="CancelStartupCheckButton" Grid.Column="1" Content="取消检查" Width="110" Height="32"
+                            Margin="8,0,0,0" IsEnabled="False" Click="CancelStartupCheckButton_Click" />
+                    <TextBlock x:Name="StartupStatusTextBlock" Grid.Column="2" VerticalAlignment="Center"
+                               Margin="16,0,0,0" Foreground="DimGray" Text="准备就绪" TextWrapping="Wrap" />
+                    <StackPanel Grid.Column="3" Margin="16,0,0,0">
+                        <TextBlock Text="启动项数" Foreground="DimGray" />
+                        <TextBlock x:Name="StartupItemCountTextBlock" Text="0" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                </Grid>
+                <DataGrid Grid.Row="1" x:Name="StartupItemsDataGrid" IsReadOnly="True" AutoGenerateColumns="False"
+                          CanUserAddRows="False" HeadersVisibility="Column" Margin="0,8,0,0">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="160" />
+                        <DataGridTextColumn Header="可执行路径" Binding="{Binding ExecutablePath}" Width="*" />
+                        <DataGridTextColumn Header="来源" Binding="{Binding SourceDisplay}" Width="160" />
+                        <DataGridTextColumn Header="启用状态" Binding="{Binding EnabledDisplay}" Width="90" />
+                        <DataGridTextColumn Header="签名状态" Binding="{Binding SignatureDisplay}" Width="200" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Expander>
+    </Grid>
+</Window>

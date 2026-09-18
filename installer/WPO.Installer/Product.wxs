@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Windows Performance Optimizer"
+           Manufacturer="365vCloud"
+           Version="2.0.0.0"
+           UpgradeCode="6f2b6f1e-6f6b-4a1a-9c1b-8b1a2f2e9d10"
+           Scope="perMachine">
+
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="WindowsPerformanceOptimizer" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <!--
+      v2: the shipped desktop application is the Rust/Tauri build
+      (src-tauri, produces a single self-contained win-x64 executable with
+      the frontend assets embedded at build time). The previous WPF shell
+      (legacy\WPO.App) is no longer packaged here; see legacy\WPO.App\LEGACY.md.
+    -->
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable">
+        <File Id="WpoAppExe"
+              Source="$(var.TauriExePath)"
+              Name="WindowsPerformanceOptimizer.exe"
+              KeyPath="yes">
+          <!--
+            Non-advertised shortcut targeting the already-installed exe: this
+            does not require any Registry table entries (those are only
+            needed for advertised shortcuts), so it stays compatible with the
+            "no Registry/no CustomAction" MSI validation.
+          -->
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="ProgramMenuFolder"
+                    Name="Windows Performance Optimizer"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Advertise="no" />
+        </File>
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="MainFeature" Title="Windows Performance Optimizer" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Package>
+</Wix>

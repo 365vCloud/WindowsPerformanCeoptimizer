@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\WPO.Domain\WPO.Domain.csproj" />
+    <ProjectReference Include="..\..\src\WPO.Core\WPO.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!--
+      The published/installed app must not depend on a separately installed
+      .NET Desktop Runtime: a framework-dependent deploy on a machine without
+      that runtime causes the app to fail to start (observed as a brief
+      "flash" and immediate exit with no visible error). Publishing
+      self-contained for win-x64 bundles the runtime so the MSI-installed
+      app always has everything it needs to launch.
+    -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+</Project>
+

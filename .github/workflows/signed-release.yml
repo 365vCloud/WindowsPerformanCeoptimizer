@@ -1,0 +1,116 @@
+name: Signed release (Authenticode)
+
+# Produces the distributable, code-signed wpo-app.exe + WPO.Installer.msi.
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#   CODE_SIGNING_PFX_BASE64   - the organisation's code-signing certificate (.pfx) encoded with base64
+#   CODE_SIGNING_PFX_PASSWORD - the PFX password
+# The private key never touches the repository: it is decoded into the runner's temp directory,
+# imported non-exportable for the duration of the signing step and removed again afterwards.
+
+on:
+  workflow_dispatch:
+    inputs:
+      timestamp_url:
+        description: RFC3161 timestamp server
+        required: true
+        default: http://timestamp.digicert.com
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signed-release
+  cancel-in-progress: false
+
+jobs:
+  signed-release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Fail fast when signing secrets are missing
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.CODE_SIGNING_PFX_BASE64 }}
+          CODE_SIGNING_PFX_PASSWORD: ${{ secrets.CODE_SIGNING_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PFX_BASE64) -or [string]::IsNullOrWhiteSpace($env:CODE_SIGNING_PFX_PASSWORD)) {
+            Write-Error 'CODE_SIGNING_PFX_BASE64 and CODE_SIGNING_PFX_PASSWORD must be configured. Unsigned artifacts are never published by this workflow.'
+            exit 1
+          }
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Restore WiX project
+        run: dotnet restore installer/WPO.Installer/WPO.Installer.wixproj
+
+      - name: Rust unit tests (safety core)
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Materialise certificate (runner temp only)
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.CODE_SIGNING_PFX_BASE64 }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
+          "PFX_PATH=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build, sign and validate release
+        shell: pwsh
+        env:
+          CODE_SIGNING_PFX_PASSWORD: ${{ secrets.CODE_SIGNING_PFX_PASSWORD }}
+        run: |
+          ./installer/WPO.Installer/Build-SignedRelease.ps1 `
+            -PfxPath $env:PFX_PATH `
+            -PfxPasswordEnvironmentVariable CODE_SIGNING_PFX_PASSWORD `
+            -TimestampUrl '${{ inputs.timestamp_url }}'
+
+      - name: Remove certificate material
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:PFX_PATH -and (Test-Path $env:PFX_PATH)) { Remove-Item -LiteralPath $env:PFX_PATH -Force }
+
+      - name: Release pipeline self-tests
+        shell: pwsh
+        run: ./installer/WPO.Installer/Test-ReleasePipeline.ps1
+
+      - name: Upload signed release
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindowsPerformanceOptimizer-signed-release
+          path: installer/WPO.Installer/bin/SignedRelease/
+          if-no-files-found: error
+          retention-days: 30
