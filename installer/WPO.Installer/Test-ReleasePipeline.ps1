@@ -17,6 +17,33 @@ if (-not (($developmentOutput | Out-String) -match 'UNSIGNED DEVELOPMENT ARTIFAC
     throw 'Development validation must succeed and emit the unsigned-distribution warning.'
 }
 
+$msiSignature = Get-AuthenticodeSignature -LiteralPath $MsiPath
+$isTestSigned = $msiSignature.SignerCertificate -and $msiSignature.SignerCertificate.Subject -eq 'CN=WPO LOCAL TEST SIGNING - NOT FOR DISTRIBUTION'
+
+if ($isTestSigned) {
+    # Formal mode must reject the self-test certificate even when its thumbprint is supplied.
+    $formalRejectedTestCert = $false
+    try { & $validator -MsiPath $MsiPath -RequireSignature -ExpectedSignerThumbprint $msiSignature.SignerCertificate.Thumbprint *>&1 | Out-Null }
+    catch { $formalRejectedTestCert = $true }
+    if (-not $formalRejectedTestCert) { throw 'RequireSignature accepted a test-signed MSI as a formal release.' }
+
+    $testOutput = & $validator -MsiPath $MsiPath -RequireSignature -AllowUntrustedTestSigner -ExpectedSignerThumbprint $msiSignature.SignerCertificate.Thumbprint *>&1
+    if (-not (($testOutput | Out-String) -match 'TEST-SIGNED ARTIFACT')) {
+        throw 'Test-signed validation must succeed and emit the not-for-distribution warning.'
+    }
+
+    $testRelease = Join-Path $PSScriptRoot 'bin\TestSignedRelease'
+    if (Test-Path -LiteralPath (Join-Path $testRelease 'release-manifest.json')) {
+        $testManifest = Get-Content (Join-Path $testRelease 'release-manifest.json') -Raw | ConvertFrom-Json
+        if ($testManifest.releaseType -ne 'test-signed-not-for-distribution' -or
+            -not (Test-Path (Join-Path $testRelease 'TEST-SIGNED-NOT-FOR-DISTRIBUTION.txt')) -or
+            ($testManifest.artifacts | Where-Object { [string]::IsNullOrWhiteSpace($_.file) }).Count -ne 0 -or
+            ((Get-Content (Join-Path $testRelease 'SHA256SUMS.txt')) -notmatch '^[A-F0-9]{64} \*\S+$').Count -ne 0) {
+            throw 'TestSignedRelease output is not labelled correctly or has empty artifact names.'
+        }
+    }
+}
+
 $formalFailed = $false
 try {
     & $validator -MsiPath $MsiPath -RequireSignature -ExpectedSignerThumbprint '0000000000000000000000000000000000000000' *>&1 | Out-Null
@@ -25,7 +52,7 @@ catch {
     $formalFailed = $true
 }
 if (-not $formalFailed) {
-    throw 'RequireSignature unexpectedly accepted the current unsigned MSI.'
+    throw 'RequireSignature unexpectedly accepted the current MSI with a bogus signer thumbprint.'
 }
 
 $temporaryDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("wpo-release-manifest-" + [guid]::NewGuid())

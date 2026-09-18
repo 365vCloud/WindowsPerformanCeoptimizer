@@ -5,10 +5,13 @@ param(
     [string]$SourceExeManifestPath,
     [switch]$RequireSignature,
     [string]$ExpectedSignerThumbprint,
-    [string]$ExpectedSignerSubject
+    [string]$ExpectedSignerSubject,
+    # Accepts an untrusted-chain (self-signed) signature ONLY for the local pipeline self-test certificate.
+    [switch]$AllowUntrustedTestSigner
 )
 
 $ErrorActionPreference = "Stop"
+$testSignerSubject = 'CN=WPO LOCAL TEST SIGNING - NOT FOR DISTRIBUTION'
 
 if ([string]::IsNullOrWhiteSpace($MsiPath)) {
     $MsiPath = Join-Path $PSScriptRoot "bin\Release\WPO.Installer.msi"
@@ -33,8 +36,14 @@ function Assert-AuthenticodeSignature {
     param([Parameter(Mandatory)][string]$Path, [string]$ExpectedThumbprint, [string]$ExpectedSubject)
 
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
-    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+    $untrustedTestChain = $AllowUntrustedTestSigner -and
+        $signature.Status -eq [System.Management.Automation.SignatureStatus]::UnknownError -and
+        $null -ne $signature.SignerCertificate -and $signature.SignerCertificate.Subject -eq $testSignerSubject
+    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -and -not $untrustedTestChain) {
         throw "Authenticode signature is not valid for '$Path': $($signature.Status) $($signature.StatusMessage)"
+    }
+    if ($signature.SignerCertificate -and $signature.SignerCertificate.Subject -eq $testSignerSubject -and -not $AllowUntrustedTestSigner) {
+        throw "'$Path' is signed with the local test certificate, which is not acceptable for a formal release."
     }
     if ($null -eq $signature.SignerCertificate) {
         throw "Authenticode validation returned no signer certificate for '$Path'."
@@ -125,7 +134,13 @@ if ($RequireSignature) {
     }
     Assert-AuthenticodeSignature -Path $resolvedMsiPath -ExpectedThumbprint $ExpectedSignerThumbprint -ExpectedSubject $ExpectedSignerSubject
     Assert-AuthenticodeSignature -Path (Resolve-Path -LiteralPath $SourceExePath).Path -ExpectedThumbprint $ExpectedSignerThumbprint -ExpectedSubject $ExpectedSignerSubject
-    Write-Host "MSI formal release validation passed: $MsiPath"
+    if ($AllowUntrustedTestSigner) {
+        Write-Warning "TEST-SIGNED ARTIFACT - UNTRUSTED SELF-SIGNED CERTIFICATE - NOT FOR DISTRIBUTION"
+        Write-Host "MSI test-signed pipeline validation passed: $MsiPath"
+    }
+    else {
+        Write-Host "MSI formal release validation passed: $MsiPath"
+    }
 }
 else {
     Write-Warning "UNSIGNED DEVELOPMENT ARTIFACT - NOT FOR DISTRIBUTION"

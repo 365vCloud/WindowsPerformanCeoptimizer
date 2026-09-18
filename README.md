@@ -199,13 +199,44 @@ powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Build-SignedRel
   -TimestampUrl 'https://timestamp.example.org/rfc3161'
 ```
 
-脚本绝不会生成测试/自签名证书；没有组织代码签名证书时，正式命令必须失败。发布验收使用：
+脚本在正式模式下绝不会生成测试/自签名证书；没有组织代码签名证书时，正式命令必须失败。发布验收使用：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Validate-Msi.ps1 `
   -RequireSignature -ExpectedSignerThumbprint 'REPLACE_WITH_ORGANIZATION_THUMBPRINT' `
   -ExpectedSignerSubject 'CN=Example Organization'
 ```
+
+#### GitHub Actions 正式签名发布
+
+`.github/workflows/signed-release.yml`（手动触发 `workflow_dispatch`）在 `windows-latest` 上执行完整的
+`Build-SignedRelease.ps1` 正式流程。需要在仓库 Secrets 中配置：
+
+| Secret | 内容 |
+| --- | --- |
+| `CODE_SIGNING_PFX_BASE64` | 组织代码签名证书（.pfx）的 Base64 编码 |
+| `CODE_SIGNING_PFX_PASSWORD` | PFX 密码 |
+
+缺少任一 Secret 时工作流直接失败，不会上传未签名产物。PFX 只写入 runner 临时目录、以不可导出方式临时导入，
+签名结束后立即删除；成功产物（已签名 EXE/MSI、`SHA256SUMS.txt`、`release-manifest.json`）作为
+`WindowsPerformanceOptimizer-signed-release` artifact 上传。
+
+#### 本地签名流水线自检（非正式、不可分发）
+
+在没有组织证书的开发机上，可用 `-LocalTestSigning` 端到端验证签名流水线本身（signtool、RFC3161 时间戳、
+EXE 哈希绑定、签名校验）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Build-SignedRelease.ps1 -LocalTestSigning
+```
+
+该模式会临时生成主题为 `CN=WPO LOCAL TEST SIGNING - NOT FOR DISTRIBUTION`、有效期 3 天、**不可导出**的
+自签名证书，签名完成后立刻从证书存储删除（私钥随之销毁）。输出固定写入
+`installer\WPO.Installer\bin\TestSignedRelease\`（禁止写入 `SignedRelease`），附带
+`TEST-SIGNED-NOT-FOR-DISTRIBUTION.txt`，`release-manifest.json` 中 `releaseType` 为
+`test-signed-not-for-distribution`。Windows 不信任这些签名（`Get-AuthenticodeSignature` 状态为
+`UnknownError`/不受信任的根），`Validate-Msi.ps1 -RequireSignature` 在没有 `-AllowUntrustedTestSigner`
+时会明确拒绝该证书，`Test-ReleasePipeline.ps1` 对这一拒绝行为有回归测试。
 
 ### 重建 MSI 的建议流程
 
@@ -220,8 +251,10 @@ powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Validate-Msi.ps
 
 ## 已知限制 / 后续工作
 
-- **签名未完成**：仓库当前现有的 `wpo-app.exe` 与 WiX MSI 均**未签名**，不可分发。受控 CI/发布环境必须由
-  组织持有的代码签名证书运行 `Build-SignedRelease.ps1`；仓库不包含证书、私钥或密码。
+- **正式签名待接入组织证书**：签名流水线（本地脚本 + GitHub Actions 工作流）已可端到端运行，并已用
+  `-LocalTestSigning` 自检模式验证 EXE/MSI 均能被 signtool 签名、加时间戳并通过校验；但仓库不包含证书、私钥
+  或密码，**可分发的受信任签名**仍需在受控 CI/发布环境中配置组织代码签名证书后运行 `Build-SignedRelease.ps1`
+  或 `signed-release` 工作流。`bin\TestSignedRelease` 中的产物不可分发。
 - **应用图标为占位图**：`src-tauri/icons/` 下的图标由脚本临时生成（纯色背景 + "W" 字样），并非最终视觉设计，
   发布前应替换为正式图标资源。
 - **仅覆盖当前用户 Temp 一个类别**：回收站已用空间、浏览器缓存、Windows 更新缓存、系统日志等清理类别仍未
