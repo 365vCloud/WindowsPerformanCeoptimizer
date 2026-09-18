@@ -10,9 +10,11 @@ use crate::core::models::{
     AuditLogEntry, CleanupExecutionResult, CleanupItem, CleanupSelection, PathValidationOutcome,
     ScanOptionsInput,
 };
-use crate::core::path_safety::{PathSafetyOptions, PathSafetyValidator};
-use crate::core::scanner::{scan_temp_files as run_scan, ScanOptions};
 use crate::core::models::{ProcessDiagnostic, StartupItem, SystemMetrics};
+use crate::core::path_safety::{PathSafetyOptions, PathSafetyValidator};
+use crate::core::scanner::{
+    default_scan_roots, scan_temp_files as run_scan, ScanOptions, ScanRoot,
+};
 
 const MAX_CANDIDATE_HARD_CAP: usize = 5_000;
 
@@ -36,9 +38,9 @@ impl Default for AppState {
     }
 }
 
-fn build_validator() -> PathSafetyValidator {
-    let temp_root = std::env::temp_dir();
-    PathSafetyValidator::new(PathSafetyOptions::with_defaults(vec![temp_root]))
+fn build_validator(scan_roots: &[ScanRoot]) -> PathSafetyValidator {
+    let allowed_roots = scan_roots.iter().map(|r| r.root.clone()).collect();
+    PathSafetyValidator::new(PathSafetyOptions::with_defaults(allowed_roots))
 }
 
 #[tauri::command]
@@ -57,21 +59,25 @@ pub fn scan_temp_files(
         if let Some(count) = opts.maximum_candidate_count {
             scan_options.maximum_candidate_count = count.min(MAX_CANDIDATE_HARD_CAP);
         }
-
     }
 
-    let validator = build_validator();
+    let validator = build_validator(&scan_options.roots);
     let items = run_scan(&scan_options, &validator, &state.scan_cancel)
         .map_err(|_| "扫描已取消。".to_string())?;
 
-    let mut last_scan = state.last_scan.lock().map_err(|_| "内部状态异常。".to_string())?;
+    let mut last_scan = state
+        .last_scan
+        .lock()
+        .map_err(|_| "内部状态异常。".to_string())?;
     *last_scan = items.clone();
 
     Ok(items)
 }
 
 #[tauri::command]
-pub fn get_system_metrics() -> SystemMetrics { crate::core::diagnostics::system_metrics() }
+pub fn get_system_metrics() -> SystemMetrics {
+    crate::core::diagnostics::system_metrics()
+}
 
 #[tauri::command]
 pub fn scan_processes(limit: Option<usize>) -> Vec<ProcessDiagnostic> {
@@ -79,12 +85,17 @@ pub fn scan_processes(limit: Option<usize>) -> Vec<ProcessDiagnostic> {
 }
 
 #[tauri::command]
-pub fn scan_startup_items() -> Vec<StartupItem> { crate::core::diagnostics::startup_items() }
+pub fn scan_startup_items() -> Vec<StartupItem> {
+    crate::core::diagnostics::startup_items()
+}
 
 #[tauri::command]
 pub fn scan_junk_files(
-    state: State<AppState>, options: Option<ScanOptionsInput>,
-) -> Result<Vec<CleanupItem>, String> { scan_temp_files(state, options) }
+    state: State<AppState>,
+    options: Option<ScanOptionsInput>,
+) -> Result<Vec<CleanupItem>, String> {
+    scan_temp_files(state, options)
+}
 
 #[tauri::command]
 pub fn cancel_scan(state: State<AppState>) {
@@ -102,7 +113,8 @@ pub fn cancel_execution(state: State<AppState>) {
 /// any item that comes back `is_allowed: false`.
 #[tauri::command]
 pub fn revalidate_paths(paths: Vec<String>) -> Vec<PathValidationOutcome> {
-    let validator = build_validator();
+    let roots = default_scan_roots();
+    let validator = build_validator(&roots);
     paths.iter().map(|p| validator.validate(p)).collect()
 }
 
@@ -112,7 +124,8 @@ pub fn execute_cleanup(
     selection: CleanupSelection,
 ) -> Result<CleanupExecutionResult, String> {
     state.exec_cancel.store(false, Ordering::SeqCst);
-    let validator = build_validator();
+    let roots = default_scan_roots();
+    let validator = build_validator(&roots);
     let items = state
         .last_scan
         .lock()

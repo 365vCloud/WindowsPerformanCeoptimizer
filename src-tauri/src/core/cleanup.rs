@@ -58,10 +58,7 @@ pub fn execute_cleanup(
     let mut cancelled_from_here_on = false;
 
     for item in preview_items {
-        let is_selected = selection
-            .selected_item_ids
-            .iter()
-            .any(|id| id == &item.id);
+        let is_selected = selection.selected_item_ids.iter().any(|id| id == &item.id);
 
         if !is_selected {
             results.push(to_result(
@@ -123,10 +120,18 @@ pub fn execute_cleanup(
             continue;
         }
 
-        let target_path = validation.normalized_path.unwrap_or_else(|| item.full_path.clone());
+        let target_path = validation
+            .normalized_path
+            .unwrap_or_else(|| item.full_path.clone());
         match move_to_recycle_bin(&target_path) {
             Ok(()) => {
-                results.push(to_result(item, true, CleanupItemStatus::Deleted, "None", None));
+                results.push(to_result(
+                    item,
+                    true,
+                    CleanupItemStatus::Deleted,
+                    "None",
+                    None,
+                ));
                 log_item_deleted(item, &correlation_id);
             }
             Err(err) => {
@@ -149,10 +154,22 @@ pub fn execute_cleanup(
         .map(|r| r.size_bytes)
         .sum();
 
-    let deleted = results.iter().filter(|r| r.status == CleanupItemStatus::Deleted).count();
-    let failed = results.iter().filter(|r| r.status == CleanupItemStatus::Failed).count();
-    let skipped = results.iter().filter(|r| r.status == CleanupItemStatus::Skipped).count();
-    let cancelled = results.iter().filter(|r| r.status == CleanupItemStatus::Cancelled).count();
+    let deleted = results
+        .iter()
+        .filter(|r| r.status == CleanupItemStatus::Deleted)
+        .count();
+    let failed = results
+        .iter()
+        .filter(|r| r.status == CleanupItemStatus::Failed)
+        .count();
+    let skipped = results
+        .iter()
+        .filter(|r| r.status == CleanupItemStatus::Skipped)
+        .count();
+    let cancelled = results
+        .iter()
+        .filter(|r| r.status == CleanupItemStatus::Cancelled)
+        .count();
 
     log_audit(
         if cancelled_from_here_on {
@@ -370,7 +387,10 @@ mod tests {
         };
 
         let result = execute_cleanup(&[item1, item2], &selection, &validator, &cancel).unwrap();
-        assert!(result.items.iter().all(|r| r.status == CleanupItemStatus::Cancelled));
+        assert!(result
+            .items
+            .iter()
+            .all(|r| r.status == CleanupItemStatus::Cancelled));
         assert!(result.was_cancelled);
     }
 

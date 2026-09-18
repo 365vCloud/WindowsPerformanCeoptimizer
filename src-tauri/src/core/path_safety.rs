@@ -74,7 +74,13 @@ impl PathSafetyValidator {
 
         let normalized = trim_trailing_separators(&absolute);
 
-        if is_under_any_root(&normalized, &self.options.denied_roots) {
+        if is_under_any_root(&normalized, &self.options.denied_roots)
+            && !has_allowed_child_override(
+                &normalized,
+                &self.options.denied_roots,
+                &self.options.allowed_roots,
+            )
+        {
             return reject("DeniedRoot", Some(&normalized));
         }
 
@@ -87,8 +93,13 @@ impl PathSafetyValidator {
                 if !path_equals(&resolved, &normalized) {
                     let resolved_normalized = trim_trailing_separators(&resolved);
                     let resolved_path = PathBuf::from(&resolved_normalized);
-                    if is_under_any_root(&resolved_path, &self.options.denied_roots)
-                        || !is_under_any_root(&resolved_path, &self.options.allowed_roots)
+                    if !is_under_any_root(&resolved_path, &self.options.allowed_roots)
+                        || (is_under_any_root(&resolved_path, &self.options.denied_roots)
+                            && !has_allowed_child_override(
+                                &resolved_path,
+                                &self.options.denied_roots,
+                                &self.options.allowed_roots,
+                            ))
                     {
                         return reject("SymlinkEscape", Some(&normalized));
                     }
@@ -163,6 +174,29 @@ fn is_under_any_root(candidate: &Path, roots: &[PathBuf]) -> bool {
             None => return false,
         };
         is_under(candidate, &normalized_root)
+    })
+}
+
+fn has_allowed_child_override(
+    candidate: &Path,
+    denied_roots: &[PathBuf],
+    allowed_roots: &[PathBuf],
+) -> bool {
+    denied_roots.iter().any(|denied| {
+        let Some(denied_root) = normalize(&denied.to_string_lossy()) else {
+            return false;
+        };
+
+        is_under(candidate, &denied_root)
+            && allowed_roots.iter().any(|allowed| {
+                let Some(allowed_root) = normalize(&allowed.to_string_lossy()) else {
+                    return false;
+                };
+
+                !path_equals(&allowed_root, &denied_root)
+                    && is_under(candidate, &allowed_root)
+                    && is_under(&allowed_root, &denied_root)
+            })
     })
 }
 
@@ -268,7 +302,10 @@ mod tests {
         let v = validator(vec![PathBuf::from("C:\\")]);
         let result = v.validate("C:\\");
         assert!(!result.is_allowed);
-        assert_eq!(result.rejection_reason.as_deref(), Some("DriveRootDeletionForbidden"));
+        assert_eq!(
+            result.rejection_reason.as_deref(),
+            Some("DriveRootDeletionForbidden")
+        );
     }
 
     #[test]
@@ -287,6 +324,30 @@ mod tests {
         let result = v.validate(file_path.to_str().unwrap());
         assert!(!result.is_allowed);
         assert_eq!(result.rejection_reason.as_deref(), Some("DeniedRoot"));
+    }
+
+    #[test]
+    fn allows_explicit_safe_child_inside_denied_parent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let safe_child = tmp.path().join("safe-temp");
+        let sibling = tmp.path().join("documents");
+        stdfs::create_dir_all(&safe_child).unwrap();
+        stdfs::create_dir_all(&sibling).unwrap();
+        let safe_file = safe_child.join("file.tmp");
+        let sibling_file = sibling.join("private.txt");
+        File::create(&safe_file).unwrap();
+        File::create(&sibling_file).unwrap();
+
+        let v = PathSafetyValidator::new(PathSafetyOptions {
+            allowed_roots: vec![safe_child],
+            denied_roots: vec![tmp.path().to_path_buf()],
+            resolve_symbolic_links: true,
+        });
+
+        assert!(v.validate(safe_file.to_str().unwrap()).is_allowed);
+        let rejected = v.validate(sibling_file.to_str().unwrap());
+        assert!(!rejected.is_allowed);
+        assert_eq!(rejected.rejection_reason.as_deref(), Some("DeniedRoot"));
     }
 
     #[cfg(windows)]
@@ -313,4 +374,3 @@ mod tests {
         assert_eq!(result.rejection_reason.as_deref(), Some("SymlinkEscape"));
     }
 }
-
