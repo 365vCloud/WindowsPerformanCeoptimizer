@@ -1,8 +1,42 @@
 # Windows Performance Optimizer (v2 — Tauri)
 
-一个包含系统仪表盘、卡顿诊断、启动项只读检查和垃圾文件清理的 Windows 性能工具。v2 版本已从 WPF 迁移到 **Rust + Tauri v2**：
-前端是无构建依赖的静态 HTML/CSS/JS 仪表盘，后端是 Rust（Tauri commands）。所有删除操作默认且唯一走
-Windows 回收站，绝不会自动执行永久删除。
+> **项目声明 / Disclaimer**
+>
+> 本项目为**个人兴趣开发**的开源练手项目，**仅供个人学习与个人使用，不用于任何商业用途**。
+> 软件按“现状”提供，不附带任何形式的保证；使用前请自行评估风险，作者不对因使用本软件造成的任何数据损失或
+> 系统问题承担责任。本仓库不接受商业合作、付费定制或商业再分发请求。
+>
+> This is a **personal hobby project**, provided **for personal learning and personal use only**.
+> **Commercial use of any kind is not permitted.** The software is provided "as is", without warranty of any kind.
+
+一个包含系统仪表盘、卡顿诊断、启动项只读检查和垃圾文件清理的 Windows 性能工具。v2 版本已从 WPF 迁移到
+**Rust + Tauri v2**：前端是无构建依赖的静态 HTML/CSS/JS 仪表盘，后端是 Rust（Tauri commands）。
+所有删除操作默认且唯一走 Windows 回收站，绝不会自动执行永久删除。
+
+## 功能概览
+
+| 标签页 | 功能 | 说明 |
+| --- | --- | --- |
+| 仪表盘 | CPU / 内存 / 磁盘使用率实时概览 | 只读采集，字段不可用时显示为空而不是猜测值 |
+| 卡顿诊断 | 按 CPU / 内存排序的进程列表 | **只读**，不提供结束进程、调整优先级等操作 |
+| 垃圾文件 | 扫描当前用户 `%TEMP%` 中超过 24 小时未修改的文件，勾选后移入回收站 | 白名单路径校验、风险分级、二次确认、可取消、**只移动到回收站** |
+| 启动项 | 列出启动项及来源 | **只读**检查，不修改注册表或启动文件夹 |
+| 操作记录 / 结果 | 逐项清理结果、实际释放空间、CSV / JSON 导出、本地审计日志 | 审计日志本地存储并脱敏，可随时清除 |
+
+设计上**明确不做**的事情：写注册表、结束进程、执行 PowerShell/脚本清理、绕过权限、上传任何数据（无遥测）、
+永久删除文件。详见下方“关键安全设计”与“明确排除的行为”。
+
+## 下载与安装
+
+- 前往 [Releases](https://github.com/365vCloud/WindowsPerformanCeoptimizer/releases) 下载 `WPO.Installer.msi`，
+  双击安装（每机安装到 `C:\Program Files\WindowsPerformanceOptimizer\`，开始菜单会创建快捷方式）。
+- 可用同目录的 `SHA256SUMS.txt` 核对文件哈希：`Get-FileHash .\WPO.Installer.msi -Algorithm SHA256`。
+- 需要 Windows 10/11 x64 与 Microsoft Edge WebView2 Runtime（Windows 11 自带）。
+- ⚠️ 当前 Release 使用**自签名证书**签名（签名者 `CN=WPO LOCAL TEST SIGNING - NOT FOR DISTRIBUTION`），
+  Windows SmartScreen / UAC 会提示“未知发布者”，这是预期现象；该签名仅证明文件自构建后未被篡改，并不代表
+  受信任的发布者身份。这与本项目“个人学习使用”的定位一致，不会申请商业代码签名证书。
+- 卸载：通过“设置 → 应用”或 `msiexec /x WPO.Installer.msi` 卸载，程序目录会被完整移除；
+  `%LocalAppData%\WindowsPerformanceOptimizer\` 下的审计日志/报告/崩溃日志为用户数据，需手动删除。
 
 ## v2 架构
 
@@ -270,3 +304,10 @@ powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Build-SignedRel
 
 本应用及其构建流程中**不包含**：注册表写入、进程终止、PowerShell 清理脚本、提权绕过、默认永久删除、
 遥测/使用数据上传。
+
+## 使用许可与免责声明
+
+- 本项目为个人兴趣开发，源代码公开仅用于**个人学习、研究与个人使用**。
+- **禁止任何商业用途**，包括但不限于：销售、付费分发、捆绑到商业产品或服务、用于商业性系统维护服务。
+- 未附带开源许可证文件，默认保留所有权利；如需在上述范围之外使用，请先与作者联系。
+- 软件按“现状”提供，不提供任何明示或暗示的保证。清理操作虽只移动到回收站，但仍请在使用前自行备份重要数据。
