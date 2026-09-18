@@ -1,6 +1,11 @@
 [CmdletBinding()]
 param(
-    [string]$MsiPath
+    [string]$MsiPath,
+    [string]$SourceExePath,
+    [string]$SourceExeManifestPath,
+    [switch]$RequireSignature,
+    [string]$ExpectedSignerThumbprint,
+    [string]$ExpectedSignerSubject
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,6 +16,38 @@ if ([string]::IsNullOrWhiteSpace($MsiPath)) {
 
 if (-not (Test-Path -LiteralPath $MsiPath -PathType Leaf)) {
     throw "MSI was not found: $MsiPath. Build the Release installer first."
+}
+
+if ([string]::IsNullOrWhiteSpace($SourceExePath)) {
+    $SourceExePath = Join-Path $PSScriptRoot "..\..\src-tauri\target\release\wpo-app.exe"
+}
+if ([string]::IsNullOrWhiteSpace($SourceExeManifestPath)) {
+    $SourceExeManifestPath = Join-Path $PSScriptRoot "..\..\src-tauri\target\release\wpo-app.build-manifest.json"
+}
+
+function Normalize-Thumbprint([string]$Value) {
+    return ($Value -replace '\s', '').ToUpperInvariant()
+}
+
+function Assert-AuthenticodeSignature {
+    param([Parameter(Mandatory)][string]$Path, [string]$ExpectedThumbprint, [string]$ExpectedSubject)
+
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+        throw "Authenticode signature is not valid for '$Path': $($signature.Status) $($signature.StatusMessage)"
+    }
+    if ($null -eq $signature.SignerCertificate) {
+        throw "Authenticode validation returned no signer certificate for '$Path'."
+    }
+    if ($ExpectedThumbprint -and (Normalize-Thumbprint $signature.SignerCertificate.Thumbprint) -ne (Normalize-Thumbprint $ExpectedThumbprint)) {
+        throw "Signer thumbprint mismatch for '$Path'. Expected '$ExpectedThumbprint', got '$($signature.SignerCertificate.Thumbprint)'."
+    }
+    if ($ExpectedSubject -and $signature.SignerCertificate.Subject -ne $ExpectedSubject) {
+        throw "Signer subject mismatch for '$Path'. Expected '$ExpectedSubject', got '$($signature.SignerCertificate.Subject)'."
+    }
+    if ($null -eq $signature.TimeStamperCertificate) {
+        throw "Authenticode signature for '$Path' has no RFC3161 timestamp certificate."
+    }
 }
 
 $installer = New-Object -ComObject WindowsInstaller.Installer
@@ -69,6 +106,28 @@ if ($directoryNames -notcontains "WindowsPerformanceOptimizer") {
     throw "The MSI does not target the WindowsPerformanceOptimizer application directory."
 }
 
-Write-Host "MSI static validation passed: $MsiPath"
-
-
+if ($RequireSignature) {
+    if ([string]::IsNullOrWhiteSpace($ExpectedSignerThumbprint) -and [string]::IsNullOrWhiteSpace($ExpectedSignerSubject)) {
+        throw "RequireSignature requires ExpectedSignerThumbprint and/or ExpectedSignerSubject."
+    }
+    if (-not (Test-Path -LiteralPath $SourceExePath -PathType Leaf)) {
+        throw "Source Tauri executable was not found: $SourceExePath."
+    }
+    if (-not (Test-Path -LiteralPath $SourceExeManifestPath -PathType Leaf)) {
+        throw "Source Tauri executable manifest was not found: $SourceExeManifestPath."
+    }
+    $sourceManifest = Get-Content -LiteralPath $SourceExeManifestPath -Raw | ConvertFrom-Json
+    $actualSourceHash = (Get-FileHash -LiteralPath $SourceExePath -Algorithm SHA256).Hash
+    if ($sourceManifest.schemaVersion -ne 1 -or $sourceManifest.file -ne 'wpo-app.exe' -or
+        $sourceManifest.sha256 -notmatch '^[A-Fa-f0-9]{64}$' -or
+        $sourceManifest.sha256 -ne $actualSourceHash) {
+        throw "Source Tauri executable manifest does not bind to '$SourceExePath'."
+    }
+    Assert-AuthenticodeSignature -Path $resolvedMsiPath -ExpectedThumbprint $ExpectedSignerThumbprint -ExpectedSubject $ExpectedSignerSubject
+    Assert-AuthenticodeSignature -Path (Resolve-Path -LiteralPath $SourceExePath).Path -ExpectedThumbprint $ExpectedSignerThumbprint -ExpectedSubject $ExpectedSignerSubject
+    Write-Host "MSI formal release validation passed: $MsiPath"
+}
+else {
+    Write-Warning "UNSIGNED DEVELOPMENT ARTIFACT — NOT FOR DISTRIBUTION"
+    Write-Host "MSI development static validation passed: $MsiPath"
+}

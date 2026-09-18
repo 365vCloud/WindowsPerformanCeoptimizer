@@ -114,17 +114,17 @@ npm run build
 #   src-tauri\target\release\bundle\msi\Windows Performance Optimizer_2.0.0_x64_en-US.msi
 #   src-tauri\target\release\bundle\nsis\Windows Performance Optimizer_2.0.0_x64-setup.exe
 
-# 本仓库的 WiX v5 MSI（打包上面的 wpo-app.exe；必须先跑通 `npm run build`）
+# 本仓库的 WiX v5 MSI（默认重新构建 Tauri exe，再打包）
 dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release
 
-# 不执行真实安装，静态检查 MSI 的文件/升级/安全表
+# 开发静态检查；会明确显示 UNSIGNED DEVELOPMENT ARTIFACT — NOT FOR DISTRIBUTION
 powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Validate-Msi.ps1
 
 # 可选：旧 .NET 核心逻辑的单元测试（迁移前的参考实现，仍然全部通过）
 dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
 ```
 
-### 本次实际构建结果（在本机验证过）
+### 开发构建说明
 
 - `cargo build --release`：**构建成功**，生成更新后的 `src-tauri\target\release\wpo-app.exe`。
 - `cargo test`：Rust 单元测试 **22 项全部通过**（原路径安全/扫描/清理/审计测试 + 启动诊断相关编译回归覆盖）。
@@ -133,8 +133,9 @@ dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
 - `dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release`：**构建成功**，生成
   `installer\WPO.Installer\bin\Release\WPO.Installer.msi`（Version 2.0.0.0，UpgradeCode 与 v1 保持一致，
   同版本重建包也允许通过 `MajorUpgrade AllowSameVersionUpgrades="yes"` 替换旧安装）。
-- `Validate-Msi.ps1`：**静态验证通过**（无 CustomAction、无 Registry 表、包含 `WindowsPerformanceOptimizer.exe`、
-  含 MajorUpgrade 元数据、安装到 `WindowsPerformanceOptimizer` 目录）。
+- `Validate-Msi.ps1`：开发静态验证会检查无 CustomAction、无 Registry 表、包含
+  `WindowsPerformanceOptimizer.exe`、MajorUpgrade 元数据和目标目录；它不是签名证明，并会输出醒目的
+  `UNSIGNED DEVELOPMENT ARTIFACT — NOT FOR DISTRIBUTION` 警告。
 - **实际安装/启动/卸载验证通过**：
   1. 先静默安装修复前 MSI，再静默安装修复后、版本号仍为 `2.0.0.0` 的 MSI；
   2. 安装目录中的 `WindowsPerformanceOptimizer.exe` 哈希从
@@ -173,11 +174,45 @@ dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
   WebView2 Runtime 已存在。若缺失，应用现在会弹出中文错误框，并把诊断写入
   `%LocalAppData%\WindowsPerformanceOptimizer\logs\crash-*.log`。
 
+### 开发包与正式签名发布
+
+`dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release` 默认以
+`BuildTauriBeforeMsi=true` 执行本地锁定的 `node_modules\.bin\tauri.cmd build --no-bundle`，清理旧 Release 输出，并生成
+`src-tauri\target\release\wpo-app.build-manifest.json`。它产出的 MSI/EXE 是**未签名开发产物，不可分发**。
+
+正式发布只允许使用 `installer\WPO.Installer\Build-SignedRelease.ps1`。脚本先执行干净 Tauri Release
+构建，签署并验证 EXE，再以其 SHA-256 固定值构建 WiX MSI，签署并严格验证两个文件的签名、证书身份和
+RFC3161 时间戳。成功目录只在签名后计算并写入 `SHA256SUMS.txt` 与不含秘密的
+`release-manifest.json`。不要将 PFX、私钥、密码或证书导入仓库。
+
+```powershell
+# 密码仅存在受保护的 CI secret 环境变量；PFX 路径和时间戳服务为示例占位值。
+$env:WPO_CODESIGN_PFX_PASSWORD = '<CI secret>'
+powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Build-SignedRelease.ps1 `
+  -PfxPath 'C:\secure\organization-codesigning.pfx' `
+  -PfxPasswordEnvironmentVariable 'WPO_CODESIGN_PFX_PASSWORD' `
+  -TimestampUrl 'https://timestamp.example.org/rfc3161'
+
+# 或使用已安装到证书存储的私钥证书（不传密码）。
+powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Build-SignedRelease.ps1 `
+  -CertificateThumbprint 'REPLACE_WITH_ORGANIZATION_THUMBPRINT' `
+  -TimestampUrl 'https://timestamp.example.org/rfc3161'
+```
+
+脚本绝不会生成测试/自签名证书；没有组织代码签名证书时，正式命令必须失败。发布验收使用：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Validate-Msi.ps1 `
+  -RequireSignature -ExpectedSignerThumbprint 'REPLACE_WITH_ORGANIZATION_THUMBPRINT' `
+  -ExpectedSignerSubject 'CN=Example Organization'
+```
+
 ### 重建 MSI 的建议流程
 
 1. **正式发布优先递增版本号**（`tauri.conf.json` / `Product.wxs`），让标准 MajorUpgrade 路径处理升级。
 2. 若是支持/热修复场景，必须保持版本号不变时，可直接重建 MSI；仓库内的 WiX 配置已允许同版本替换旧安装。
-3. 构建顺序保持为：`cargo build --release` → `npx tauri build` → `dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release` → `Validate-Msi.ps1`。
+3. 开发构建使用 `dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release`；正式发布必须运行
+   `Build-SignedRelease.ps1`，不能手工分拆签名步骤。
 4. 若用户反馈自定义 WiX MSI 安装后无法启动，优先检查：
    - 目标机是否安装 WebView2 Runtime；
    - `%LocalAppData%\WindowsPerformanceOptimizer\logs\crash-*.log` 中的错误类型/消息/位置；
@@ -185,16 +220,15 @@ dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
 
 ## 已知限制 / 后续工作
 
-- **签名未完成**：当前生成的 `wpo-app.exe`、Tauri MSI/NSIS、以及本仓库 WiX MSI 均**未签名**。发布流程应在
-  受控 CI/发布环境中使用组织持有的代码签名证书对最终产物签名并加时间戳；证书、私钥、指纹和签名命令不得
-  写入本仓库。签名后需重新运行 `Validate-Msi.ps1`。
+- **签名未完成**：仓库当前现有的 `wpo-app.exe` 与 WiX MSI 均**未签名**，不可分发。受控 CI/发布环境必须由
+  组织持有的代码签名证书运行 `Build-SignedRelease.ps1`；仓库不包含证书、私钥或密码。
 - **应用图标为占位图**：`src-tauri/icons/` 下的图标由脚本临时生成（纯色背景 + "W" 字样），并非最终视觉设计，
   发布前应替换为正式图标资源。
 - **仅覆盖当前用户 Temp 一个类别**：回收站已用空间、浏览器缓存、Windows 更新缓存、系统日志等清理类别仍未
   实现（与 v1 状态一致）。
 - **前端未做浏览器兼容性测试**：`frontend/` 仅设计为在 Tauri 内置 WebView2 中运行，不追求独立浏览器兼容性。
-- **本仓库的 WiX MSI 依赖手动预构建**：`WPO.Installer.wixproj` 只校验 `src-tauri/target/release/wpo-app.exe`
-  是否存在，不会自动调用 `cargo`/`npm`（避免把工具链耦合进 MSBuild）；必须先手动运行 `npm run build`。
+- **WiX 依赖 Tauri 工具链**：WiX 项目默认构建新鲜的 Tauri Release 输出；仅在受控发布脚本的第二个 MSI 构建阶段
+  会设为 `BuildTauriBeforeMsi=false`，并以已签名 EXE 的 SHA-256 强制校验，防止打包 stale exe。
 - **legacy WPF 代码保留但不维护**：`legacy/WPO.App` 与 `src/WPO.Core`、`src/WPO.Domain`、
   `tests/WPO.Core.Tests` 仅作为原安全逻辑的参考实现与回归测试保留，未来变更应只发生在 `src-tauri/`；
   两套实现之间没有共享代码或运行时依赖。

@@ -21,22 +21,31 @@
     <RepoRoot>$(MSBuildProjectDirectory)\..\..\</RepoRoot>
     <TauriReleaseDir>$(RepoRoot)src-tauri\target\release\</TauriReleaseDir>
     <TauriExePath>$(TauriReleaseDir)wpo-app.exe</TauriExePath>
+    <TauriBuildManifestPath>$(TauriReleaseDir)wpo-app.build-manifest.json</TauriBuildManifestPath>
+    <BuildTauriBeforeMsi Condition="'$(BuildTauriBeforeMsi)' == ''">true</BuildTauriBeforeMsi>
     <DefineConstants>$(DefineConstants);TauriExePath=$(TauriExePath)</DefineConstants>
   </PropertyGroup>
 
-  <!--
-    v2 packages the Tauri (Rust) build output instead of publishing the
-    legacy WPF app. This target only *verifies* the exe already exists; it
-    intentionally does not invoke cargo/npm itself, because doing so from
-    inside an MSBuild target makes failures hard to diagnose and couples the
-    installer build to toolchains (Rust/Node) that may not be present on
-    every machine that just wants to rebuild the MSI from an existing
-    Tauri release build. Run `npm run build` (which runs `tauri build`) in
-    the repository root before building this project; see README.md.
-  -->
-  <Target Name="EnsureTauriBuildExists" BeforeTargets="_CreateProjectDefineConstants">
-    <Error Condition="!Exists('$(TauriExePath)')"
-           Text="Tauri release executable not found at '$(TauriExePath)'. Run 'npm install' then 'npm run build' (or 'npm run tauri build') from the repository root before building the MSI." />
+  <!-- Build the exact Tauri executable consumed by WiX unless a release orchestrator supplies one. -->
+  <Target Name="BuildTauriRelease" Condition="'$(BuildTauriBeforeMsi)' == 'true'">
+    <RemoveDir Directories="$(TauriReleaseDir)" />
+    <Exec WorkingDirectory="$(RepoRoot)"
+          Command="&quot;$(ComSpec)&quot; /d /c &quot;&quot;$(TauriCommand)&quot; build --no-bundle&quot;"
+          EnvironmentVariables="npm_config_audit=false;npm_config_fund=false" />
   </Target>
 
+  <PropertyGroup>
+    <TauriCommand Condition="'$(TauriCommand)' == ''">$(RepoRoot)node_modules\.bin\tauri.cmd</TauriCommand>
+  </PropertyGroup>
+
+  <Target Name="CreateTauriBuildManifest" DependsOnTargets="BuildTauriRelease" BeforeTargets="_CreateProjectDefineConstants">
+    <Error Condition="!Exists('$(TauriExePath)')"
+           Text="Tauri release executable not found at '$(TauriExePath)' after the release build." />
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='Stop'; $stream=[IO.File]::OpenRead('$(TauriExePath)'); try { $bytes=[Security.Cryptography.SHA256]::Create().ComputeHash($stream) } finally { $stream.Dispose() }; $hash=[BitConverter]::ToString($bytes).Replace('-',''); [ordered]@{ schemaVersion=1; generatedUtc=[DateTime]::UtcNow.ToString('o'); file='wpo-app.exe'; sha256=$hash } | ConvertTo-Json | Set-Content -LiteralPath '$(TauriBuildManifestPath)' -Encoding UTF8&quot;" />
+  </Target>
+
+  <Target Name="VerifyExpectedTauriHash" DependsOnTargets="CreateTauriBuildManifest" BeforeTargets="_CreateProjectDefineConstants"
+          Condition="'$(ExpectedTauriExeSha256)' != ''">
+    <Exec Command="&quot;$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='Stop'; $stream=[IO.File]::OpenRead('$(TauriExePath)'); try { $bytes=[Security.Cryptography.SHA256]::Create().ComputeHash($stream) } finally { $stream.Dispose() }; $actual=[BitConverter]::ToString($bytes).Replace('-',''); if ($actual -ne '$(ExpectedTauriExeSha256)') { throw 'The Tauri executable hash does not match ExpectedTauriExeSha256.' }&quot;" />
+  </Target>
 </Project>
