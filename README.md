@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | 仪表盘 | CPU / 内存 / 磁盘使用率实时概览 | 只读采集，字段不可用时显示为空而不是猜测值 |
 | 卡顿诊断 | 按 CPU / 内存排序的进程列表 | **只读**，不提供结束进程、调整优先级等操作 |
-| 垃圾文件 | 扫描当前用户 `%TEMP%` 中超过 24 小时未修改的文件，勾选后移入回收站 | 白名单路径校验、风险分级、二次确认、可取消、**只移动到回收站** |
+| 垃圾文件 | 扫描用户/系统临时文件、Windows 更新下载残留、传递优化缓存、错误报告、崩溃转储、着色器缓存等 | 白名单路径校验、风险分级、二次确认、可取消、**只移动到回收站** |
 | 启动项 | 列出启动项及来源 | **只读**检查，不修改注册表或启动文件夹 |
 | 操作记录 / 结果 | 逐项清理结果、实际释放空间、CSV / JSON 导出、本地审计日志 | 审计日志本地存储并脱敏，可随时清除 |
 
@@ -44,7 +44,7 @@
 .
 ├─ src-tauri/            Tauri v2 后端（Rust）
 │  ├─ Cargo.toml         crate 依赖（tauri、serde、chrono、uuid、regex、once_cell、trash、windows-sys）
-│  ├─ tauri.conf.json    应用/窗口/CSP/打包配置（版本 2.0.0）
+│  ├─ tauri.conf.json    应用/窗口/CSP/打包配置（版本 2.1.0）
 │  ├─ capabilities/      仅暴露自定义 command，不授予 shell/fs/process 插件权限
 │  ├─ icons/             应用图标（占位图，见下方“已知限制”）
 │  └─ src/
@@ -53,7 +53,7 @@
 │     ├─ commands.rs        暴露给前端的 Tauri command（指标/进程/启动项/扫描/取消/复核/执行/审计/导出）
 │     └─ core/
 │        ├─ path_safety.rs  路径安全验证器（白名单/黑名单/遍历/驱动器根/重解析点解析）
-│        ├─ scanner.rs      当前用户 Temp 垃圾文件只读扫描器（年龄过滤、数量上限、取消、单项隔离）
+│        ├─ scanner.rs      多类别垃圾文件只读扫描器（年龄过滤、数量上限、取消、单项隔离）
 │        ├─ cleanup.rs      清理执行引擎（二次确认门控、风险确认门控、二次路径校验、取消）
 │        ├─ recycle_bin.rs  基于 `trash` crate 的回收站移动（Windows Shell），无永久删除入口
 │        ├─ audit.rs        本地审计日志（LocalAppData，JSON Lines，路径/密钥脱敏）
@@ -77,10 +77,11 @@
   （如 `C:\`）、系统关键目录（Windows、System32、Program Files、用户主目录）；白名单按路径**分段**匹配，
   防止“相似前缀”绕过（`C:\Temp\Cache` 不会误放行 `C:\Temp\CacheOld`）；默认解析符号链接/联结点的最终目标并
   重新校验，防止符号链接逃逸。
-- **垃圾文件扫描器**（`core::scanner::scan_temp_files`）：只在当前用户 `%TEMP%` 内递归枚举文件**元数据**
-  （不读取文件内容）；默认只包含最后修改时间超过 24 小时的文件；默认最多返回 1000 项（硬上限 5000）；
-  从不遍历重解析点（符号链接/联结点），单项访问异常会被跳过而不中断整体扫描；支持通过 `cancel_scan`
-  command 随时取消。
+- **垃圾文件扫描器**（`core::scanner::scan_temp_files`）：在明确白名单内递归枚举文件**元数据**
+  （不读取文件内容），覆盖当前用户 Temp、Windows Temp、Windows 更新下载残留、传递优化缓存、用户/系统
+  Windows 错误报告、崩溃转储、Direct3D 着色器缓存等类别；默认只包含最后修改时间超过 24 小时的文件；
+  默认最多返回 1000 项（硬上限 5000）；从不遍历重解析点（符号链接/联结点），单项访问异常会被跳过而不中断
+  整体扫描；支持通过 `cancel_scan` command 随时取消。系统级位置和崩溃转储标记为中风险，必须额外确认。
 - **清理执行引擎**（`core::cleanup::execute_cleanup`）：
   - 必须显式携带 `confirmed: true`（对应前端“最终确认”弹窗的“是”）才会执行任何操作，否则直接返回错误、
     不触碰任何文件。
@@ -145,8 +146,8 @@ npm run build
 # 等价于: npx tauri build
 # 产物：
 #   src-tauri\target\release\wpo-app.exe
-#   src-tauri\target\release\bundle\msi\Windows Performance Optimizer_2.0.0_x64_en-US.msi
-#   src-tauri\target\release\bundle\nsis\Windows Performance Optimizer_2.0.0_x64-setup.exe
+#   src-tauri\target\release\bundle\msi\Windows Performance Optimizer_2.1.0_x64_en-US.msi
+#   src-tauri\target\release\bundle\nsis\Windows Performance Optimizer_2.1.0_x64-setup.exe
 
 # 本仓库的 WiX v5 MSI（默认重新构建 Tauri exe，再打包）
 dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release
@@ -165,13 +166,13 @@ dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
 - `npx tauri build` / `npm run build`：**构建成功**，生成 `wpo-app.exe`、Tauri 自带 MSI 与 NSIS 安装包；当前
   `tauri.conf.json` 使用 `embedBootstrapper`，安装包会携带 WebView2 引导程序而不是在安装时再在线下载。
 - `dotnet build installer\WPO.Installer\WPO.Installer.wixproj -c Release`：**构建成功**，生成
-  `installer\WPO.Installer\bin\Release\WPO.Installer.msi`（Version 2.0.0.0，UpgradeCode 与 v1 保持一致，
+  `installer\WPO.Installer\bin\Release\WPO.Installer.msi`（Version 2.1.0.0，UpgradeCode 与 v1 保持一致，
   同版本重建包也允许通过 `MajorUpgrade AllowSameVersionUpgrades="yes"` 替换旧安装）。
 - `Validate-Msi.ps1`：开发静态验证会检查无 CustomAction、无 Registry 表、包含
   `WindowsPerformanceOptimizer.exe`、MajorUpgrade 元数据和目标目录；它不是签名证明，并会输出醒目的
   `UNSIGNED DEVELOPMENT ARTIFACT — NOT FOR DISTRIBUTION` 警告。
 - **实际安装/启动/卸载验证通过**：
-  1. 先静默安装修复前 MSI，再静默安装修复后、版本号仍为 `2.0.0.0` 的 MSI；
+  1. 先静默安装旧 MSI，再静默安装更新后的 MSI（当前版本 `2.1.0.0`）；
   2. 安装目录中的 `WindowsPerformanceOptimizer.exe` 哈希从
      `D39A1648E35B63B167E7931F12887536D88BA4B8E40D8C53DFA526B83A356FE4`
      变为
@@ -191,7 +192,7 @@ dotnet test tests\WPO.Core.Tests\WPO.Core.Tests.csproj
 
 ## MSI 安装器（v2）
 
-- `installer\WPO.Installer\Product.wxs` 的 `Package` 版本号为 `2.0.0.0`；`UpgradeCode` 与 v1 保持不变
+- `installer\WPO.Installer\Product.wxs` 的 `Package` 版本号为 `2.1.0.0`；`UpgradeCode` 与 v1 保持不变
   （`6f2b6f1e-6f6b-4a1a-9c1b-8b1a2f2e9d10`），确保旧版本可以被 `MajorUpgrade` 正常升级/覆盖安装。
 - `MajorUpgrade` 显式启用了 `AllowSameVersionUpgrades="yes"`：当支持/测试场景需要“同一版本号、重新打包的新 MSI”
   去替换旧安装时，Windows Installer 会先卸载旧 ProductCode 再安装新包，避免保留 stale exe。
@@ -291,8 +292,9 @@ powershell -ExecutionPolicy Bypass -File installer\WPO.Installer\Build-SignedRel
   或 `signed-release` 工作流。`bin\TestSignedRelease` 中的产物不可分发。
 - **应用图标为占位图**：`src-tauri/icons/` 下的图标由脚本临时生成（纯色背景 + "W" 字样），并非最终视觉设计，
   发布前应替换为正式图标资源。
-- **仅覆盖当前用户 Temp 一个类别**：回收站已用空间、浏览器缓存、Windows 更新缓存、系统日志等清理类别仍未
-  实现（与 v1 状态一致）。
+- **部分垃圾类别仍保持保守策略**：当前实现覆盖临时文件、Windows 更新下载残留、传递优化缓存、错误报告、
+  崩溃转储、着色器缓存等文件型垃圾；不会清空回收站，不会修改浏览器配置，不会删除系统还原点/驱动包/WinSxS，
+  也不会运行 DISM/PowerShell 清理命令。
 - **前端未做浏览器兼容性测试**：`frontend/` 仅设计为在 Tauri 内置 WebView2 中运行，不追求独立浏览器兼容性。
 - **WiX 依赖 Tauri 工具链**：WiX 项目默认构建新鲜的 Tauri Release 输出；仅在受控发布脚本的第二个 MSI 构建阶段
   会设为 `BuildTauriBeforeMsi=false`，并以已签名 EXE 的 SHA-256 强制校验，防止打包 stale exe。

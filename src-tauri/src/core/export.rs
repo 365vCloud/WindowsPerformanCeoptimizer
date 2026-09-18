@@ -27,22 +27,21 @@ pub fn export_report(result: &CleanupExecutionResult, format: &str) -> Result<St
             format!("cleanup-report-{timestamp}.json"),
             serde_json::to_string_pretty(result).map_err(|e| e.to_string())?,
         ),
-        "csv" => (
-            format!("cleanup-report-{timestamp}.csv"),
-            to_csv(result),
-        ),
+        "csv" => (format!("cleanup-report-{timestamp}.csv"), to_csv(result)),
         other => return Err(format!("Unsupported export format: {other}")),
     };
 
     let path = dir.join(file_name);
     let mut file = fs::File::create(&path).map_err(|e| e.to_string())?;
-    file.write_all(contents.as_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(contents.as_bytes())
+        .map_err(|e| e.to_string())?;
 
     Ok(path.to_string_lossy().to_string())
 }
 
 fn to_csv(result: &CleanupExecutionResult) -> String {
-    let mut csv = String::from("ItemId,FullPath,Status,SizeBytes,WasSelected,Reason,ErrorMessage\n");
+    let mut csv =
+        String::from("ItemId,FullPath,Status,SizeBytes,WasSelected,Reason,ErrorMessage\n");
     for item in &result.items {
         csv.push_str(&format!(
             "{},{},{:?},{},{},{},{}\n",
@@ -73,4 +72,3 @@ fn csv_escape(value: &str) -> String {
         guarded
     }
 }
-

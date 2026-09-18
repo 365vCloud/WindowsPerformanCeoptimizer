@@ -38,7 +38,7 @@
       <p class="hint">仅读取启动文件夹和 Run 注册表项，不提供启用/禁用或写入操作。</p>
       <div class="table-wrap"><table><thead><tr><th>名称</th><th>命令</th><th>来源</th><th>状态</th></tr></thead><tbody id="startup-body"></tbody></table></div>
     </section>
-    <section class="panel" id="scan-panel">
+    <section class="panel tab-panel hidden" id="scan-panel">
       <div class="panel-header">
         <h2>垃圾文件扫描</h2>
         <div class="actions">
@@ -51,8 +51,9 @@
         </div>
       </div>
       <p class="hint">
-        仅扫描当前用户 Temp 目录中超过所选时长未修改的文件（默认 24 小时），只读取文件元数据，不读取文件内容；
-        最多返回 1000 项候选，符号链接/联结点会被跳过且不会被遍历。
+        扫描当前用户 Temp、Windows Temp、Windows 更新下载残留、传递优化缓存、Windows 错误报告、崩溃转储、
+        着色器缓存等常见垃圾文件位置中超过所选时长未修改的文件（默认 24 小时）。只读取文件元数据，不读取文件内容；
+        最多返回 1000 项候选，符号链接/联结点会被跳过且不会被遍历；系统级位置会标记为中风险并需要额外确认。
       </p>
       <p id="scan-status" class="status" aria-live="polite"></p>
 
@@ -67,6 +68,7 @@
           <thead>
             <tr>
               <th></th>
+              <th>类别</th>
               <th>路径</th>
               <th>大小</th>
               <th>风险</th>
@@ -83,7 +85,7 @@
       </div>
     </section>
 
-    <section class="panel" id="audit-panel">
+    <section class="panel tab-panel hidden" id="audit-panel">
       <div class="panel-header">
         <h2>本地审计日志</h2>
         <div class="actions">

@@ -1,6 +1,6 @@
 [package]
 name = "wpo-app"
-version = "2.0.0"
+version = "2.1.0"
 description = "Windows Performance Optimizer v2 (Tauri)"
 authors = ["365vCloud"]
 edition = "2021"

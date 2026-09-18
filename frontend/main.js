@@ -29,6 +29,20 @@ function riskLabel(risk) {
   return { text: "高", cls: "risk-high" };
 }
 
+function categoryLabel(category) {
+  const labels = {
+    userTemporaryFiles: "用户临时文件",
+    systemTemporaryFiles: "系统临时文件",
+    windowsUpdateDownloads: "Windows 更新残留",
+    deliveryOptimizationCache: "传递优化缓存",
+    systemErrorReports: "系统错误报告",
+    userErrorReports: "用户错误报告",
+    crashDumps: "崩溃转储",
+    shaderCache: "着色器缓存",
+  };
+  return labels[category] || category || "其他";
+}
+
 function renderResults() {
   const body = el("results-body");
   body.innerHTML = "";
@@ -53,6 +67,7 @@ function renderResults() {
     checkboxCell.appendChild(checkbox);
 
     tr.appendChild(checkboxCell);
+    tr.appendChild(td(categoryLabel(item.category)));
     tr.appendChild(td(item.fullPath));
     tr.appendChild(td(formatBytes(item.sizeBytes)));
     const riskCell = td(risk.text);
@@ -95,7 +110,17 @@ async function scan() {
     state.items = items;
     state.selected.clear();
     renderResults();
-    el("scan-status").textContent = `扫描完成，共 ${items.length} 项候选。`;
+    const categorySummary = Object.entries(
+      items.reduce((acc, item) => {
+        const label = categoryLabel(item.category);
+        acc[label] = (acc[label] || 0) + 1;
+        return acc;
+      }, {})
+    )
+      .map(([category, count]) => `${category} ${count}`)
+      .join("，");
+    el("scan-status").textContent =
+      `扫描完成，共 ${items.length} 项候选。${categorySummary ? `（${categorySummary}）` : ""}`;
   } catch (err) {
     el("scan-status").textContent = `扫描失败或已取消：${err}`;
   } finally {
